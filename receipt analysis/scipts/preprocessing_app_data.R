@@ -116,7 +116,7 @@ purchase_data %<>%
 
 ## calculate average and total footprint per receipt
 rcpt_data_v2 <- purchase_data %>% 
-  group_by(day_recorded, household_ID, hh_start) %>% #user_id and user_start are redundant for grouping but make sure this data appears in the created dataframe
+  group_by(date_recorded, household_ID, hh_start) %>% #user_id and user_start are redundant for grouping but make sure this data appears in the created dataframe
   #note: because we want to keep more variables than the ones we group by, we use mutate, select, distinct
   mutate(
     rcpt_C02_ave = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
@@ -125,7 +125,7 @@ rcpt_data_v2 <- purchase_data %>%
     rcpt_items_n = n()
   ) %>%
   select(user_ID:rcpt_items_n) %>% 
-  distinct(day_recorded, household_ID, hh_start, .keep_all = T) # Note: Because both participants of household 9 provided receipts for the pre-loaded data we have to specify the variables in `distinct()`. Otherwise we get two rows for the first receipt of household 9 which messes up our analyses.
+  distinct(date_recorded, household_ID, hh_start, .keep_all = T) # Note: Because both participants of household 9 provided receipts for the pre-loaded data we have to specify the variables in `distinct()`. Otherwise we get two rows for the first receipt of household 9 which messes up our analyses.
 
 ## add a sequence number for each receipt per person
 rcpt_data_v2 %<>% group_by(household_ID) %>% mutate(hh_receipt_id = row_number(), .after = hh_start)

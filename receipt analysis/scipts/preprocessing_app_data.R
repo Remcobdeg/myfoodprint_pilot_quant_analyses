@@ -96,8 +96,8 @@ purchase_data %<>%
 # rcpt_data <- purchase_data %>% 
 #   group_by(date_recorded, user_ID, user_start) %>% #user_id and user_start are redundant for grouping but make sure this data appears in the created dataframe
 #   summarise(
-#     rcpt_C02_ave = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
-#     rcpt_C02_total = sum(item_footprint_g_100g * item_weight_g * item_units),
+#     rcpt_CO2_g_100g = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
+#     rcpt_CO2_kg = sum(item_footprint_g_100g * item_weight_g * item_units),
 #     rcpt_weight = sum(item_weight_g * item_units),
 #     rcpt_items_n = n()
 #   )
@@ -119,8 +119,8 @@ rcpt_data_v2 <- purchase_data %>%
   group_by(date_recorded, household_ID, hh_start) %>% #user_id and user_start are redundant for grouping but make sure this data appears in the created dataframe
   #note: because we want to keep more variables than the ones we group by, we use mutate, select, distinct
   mutate(
-    rcpt_C02_ave = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
-    rcpt_C02_total = sum(item_footprint_g_100g * item_weight_g/100 * item_units),
+    rcpt_CO2_g_100g = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
+    rcpt_CO2_kg = sum(item_footprint_g_100g * item_weight_g/100 * item_units)/1000,
     rcpt_weight_kg = sum(item_weight_g/1000 * item_units),
     rcpt_items_n = n()
   ) %>%

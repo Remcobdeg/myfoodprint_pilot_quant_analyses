@@ -18,40 +18,79 @@ library(car) #qqplot
 library(lme4)
 
 #read-in the receipts
-receipt_data <- read_csv(here("data","processed","receipt_level_data.csv"))
+receipt_data <- read_csv(here("receipt analysis","data","processed","receipt_level_data.csv"))
 ```
 
-
+## Descriptives
 
 ```{r}
+#number of receipts scanned in app -- this excludes the receipts provided as starting data.
 
-# library(lme4)
+# #calculate number of receipts per household
+# receipt_data %>%
+#   group_by(household_ID) %>%
+#   filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+#   summarise(n_receipts = n_distinct(day_recorded))
+# 
+# #calculate number of receipts per participant
+# receipt_data %>% 
+#   group_by(user_ID) %>%
+#   filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+#   summarise(n_receipts = n_distinct(day_recorded))
+
+#hh level, user level, receipt level TODO!
+
+cat('\n\nRECEIPT DESCRIPTIVES\n\n')
+
+cat('\n\nNumber of receipts scanned in the app:',receipt_data %>% filter(date_recorded > hh_start) %>% nrow(),'\n\n')
+
+cat('\n\nDescriptives:\n
+    (1)number of days after start of participation that the receipt was scanned,\n
+    (2)weight-corrected average product footprint in gCO2/100g,\n
+    (3)basket footprint in gCO2 (aka. combined carbon footprint of all products in the basket)\n
+    (4)basket weight in grams (aka. combined weight of all products in the basket)\n
+    (5)number of items on a receipt\n\n
+    ')
+
+receipt_data %>% 
+  ungroup() %>%
+  filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+  select(day_recorded, rcpt_CO2_g_100g, rcpt_CO2_kg, rcpt_weight_kg, rcpt_items_n) %>% 
+  summary()
+
+
+#average, min, max of scanned receipts
+#number of scanned items
+#average, min, max of scanned receipts ave footprint, total footprint
 ```
 
+Description of receipts.
+
+## Visualize foodprint change
+
+This considers the weight-balanced average carbon footprint of receipts.
+
+### Time since enrollment
 
 ```{r}
 #visualize receipt dates
 
-#determine start-date normalized receipt dates (days since start)
-receipt_data %<>% 
-  mutate(day_recorded = difftime(date_recorded, hh_start, units = "days")) 
-
 receipt_data %>% 
-  ggplot(aes(x = as.numeric(day_recorded), y = rcpt_C02_ave)) +
+  ggplot(aes(x = as.numeric(day_recorded), y = rcpt_CO2_g_100g)) +
   geom_point() +
   geom_line() +
   facet_wrap(.~household_ID) + 
   theme_light() + 
   labs(y = "Weight-adjusted average gCO2/100g", x = "Receipt date (days since start)")
 ```
+A visual analysis does not suggest any clear change in foodprint.
 
-
-## Visualize change of average receipt print over time
+## Sequence of receipts
 
 ```{r}
 #visualize the trends
 receipt_data %>% 
-  ggplot(aes(x = receipt_id, y = rcpt_C02_ave)) +
+  ggplot(aes(x = hh_receipt_id, y = rcpt_CO2_g_100g)) +
   geom_point() +
   geom_line() +
   facet_wrap(.~household_ID) + 
@@ -62,26 +101,33 @@ receipt_data %>%
 #Data was loaded into the app before the participant started. This is accounted in receipt #1
 
 ```
+A visual analysis does not suggest any clear change in foodprint.
 
 ## Determine whether there is statistical evidence of footprint changing over time
 
+### Using mixed-model statistics (parametric)
+
+#### With receipt ID as time factor
+
+##### The model
+
 ```{r}
 
 #mixed-model to calculate change
 
 #center the independent variable
-rcpt_data_v2$receipt_id_c <- scale(rcpt_data_v2$receipt_id, center = TRUE, scale = FALSE)
+receipt_data$hh_receipt_id_c <- scale(receipt_data$hh_receipt_id, center = TRUE, scale = FALSE)
 
 #full model
-m_full <- lmer(rcpt_C02_ave ~ receipt_id_c + (1 + receipt_id_c | household_ID), data = rcpt_data_v2)
+cat('\n\n FULL MIXED MODEL (including time factor) \n\n')
+m_full <- lmer(rcpt_CO2_g_100g ~ hh_receipt_id + (1 + hh_receipt_id | household_ID), data = receipt_data)
 summary(m_full)
-
-#null model (inteaction only)
-m_null <- lmer(rcpt_C02_ave ~ 1 + (1 | household_ID), data = rcpt_data_v2)
-summary(m_null)
 ```
 
+##### Diagnostics (assessing heterogenity and normal distrubution of residuals)
+
 ```{r}
+#investigating whether residuals are normally distibuted
 densityplot(resid(m_full, scaled = TRUE))
 qqPlot(resid(m_full, scaled = TRUE))
 plot(m_full, household_ID ~ resid(., scaled = TRUE))
@@ -89,31 +135,38 @@ plot(m_full, type = c('p', 'smooth'))
 # potential problems. Outliers in the residuals
 ```
 
+There are indications of outliers and non-normality, so results should be interpreted with caution.
+
+##### Statistical inference of time effect
 
 ```{r}
+#to assess whether time was a significant factor, we need to compare it to a simpler model without the time factor
+
+#null model (inteaction only)
+m_null <- lmer(rcpt_CO2_g_100g ~ 1 + (1 | household_ID), data = receipt_data)
+
 anova(m_null,m_full)
 ```
+We find no indication of significance. 
 
+#### With time since household enrollment as independent variable. 
 
-## Determine whether there is statistical evidence of footprint changing over time -- using days since start
-
+##### The model
 ```{r}
 
 #mixed-model to calculate change
 
 #center the independent variable
-rcpt_data_v2$day_recorded_c <- scale(as.numeric(rcpt_data_v2$day_recorded), center = TRUE, scale = FALSE)
+# receipt_data$day_recorded_c <- scale(as.numeric(receipt_data$day_recorded), center = TRUE, scale = FALSE)
 
 #full model
-m_full <- lmer(rcpt_C02_ave ~ day_recorded + (1 + day_recorded | household_ID), data = rcpt_data_v2)
-summary(m_full)
-
-#null model (inteaction only)
-m_null <- lmer(rcpt_C02_ave ~ 1 + (1 | household_ID), data = rcpt_data_v2)
+m_full <- lmer(rcpt_CO2_g_100g ~ day_recorded + (1 + day_recorded | household_ID), data = receipt_data)
 summary(m_null)
 ```
+##### Diagnostics (assessing heterogenity and normal distrubution of residuals)
 
 ```{r}
+#investigating whether residuals are normally distibuted
 densityplot(resid(m_full, scaled = TRUE))
 qqPlot(resid(m_full, scaled = TRUE))
 plot(m_full, household_ID ~ resid(., scaled = TRUE))
@@ -121,31 +174,41 @@ plot(m_full, type = c('p', 'smooth'))
 # potential problems. Outliers in the residuals
 ```
 
+There are indications of outliers and non-normality, so results should be interpreted with caution.
+
+##### Statistical inference of time effect
 
 ```{r}
+#null model (inteaction only)
+m_null <- lmer(rcpt_CO2_g_100g ~ 1 + (1 | household_ID), data = receipt_data)
+
 anova(m_null,m_full)
 ```
 
+No significant impact of time on foodprint found.
 
-## Non-parametric test of time impact
+### Using a Skillings-Mack tests (Non-parametric alternative)
 ```{r}
 #create dataframe for ski.mack -- 'missing' observation have to be present in the df as NA
 #this can easily be achieved by turning the data into a wide structure. Each row needs to be a group (household)
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2761045/
 # https://en.wikipedia.org/wiki/Friedman_test#cite_note-6
 
-
 library(Skillings.Mack)
 
-skimack_data <- receipt_data %>% select(household_ID, receipt_id, rcpt_C02_ave)
-# skimack_data %<>% pivot_wider(names_from = receipt_id, values_from = rcpt_C02_ave)
+skimack_data <- receipt_data %>% select(household_ID, hh_receipt_id, rcpt_CO2_g_100g)
+# skimack_data %<>% pivot_wider(names_from = hh_receipt_id, values_from = rcpt_CO2_g_100g)
 # skimack_data %<>% select(!household_ID)
 # skimack_data %<>% select(!13)
 # skimack_data %>% as.matrix() %>% Ski.Mack(.)
-skimack_data %<>% pivot_wider(names_from = household_ID, values_from = rcpt_C02_ave)
-skimack_data %<>% select(!receipt_id)
+skimack_data %<>% pivot_wider(names_from = household_ID, values_from = rcpt_CO2_g_100g)
+skimack_data %<>% select(!hh_receipt_id)
 skimack_data %>% as.matrix() %>% Ski.Mack(.) #there is no clear difference in receipt number
 ```
+
+The non-parametric test shows no significant impact of time.
+
+### Paired t-test (parametric) of receipts in -1SD vs. 1SD of active scanning period
 
 ```{r}
 #alternative: compare first with all future receipts
@@ -158,24 +221,32 @@ receipt_data %<>%
 test <- receipt_data %>% 
   group_by(household_ID, date_third) %>%
   mutate(
-    period_footprint_total = sum(rcpt_C02_total),
+    period_footprint_total = sum(rcpt_CO2_kg),
     period_weight_total = sum(rcpt_weight),
-    period_footprint_ave = sum(rcpt_C02_total)/sum(rcpt_weight), .after = rcpt_C02_ave
+    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight), .after = rcpt_CO2_g_100g
   )
 
 test <- receipt_data %>% 
   group_by(household_ID, date_third) %>%
   reframe(
-    period_footprint_total = sum(rcpt_C02_total),
+    period_footprint_total = sum(rcpt_CO2_kg),
     period_weight_total = sum(rcpt_weight),
-    period_footprint_ave = sum(rcpt_C02_total)/sum(rcpt_weight)
+    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight)
   )
+```
+#### Visual trends
 
+```{r}
 test %>% 
   filter(date_third != 2) %>%
   ggplot(aes(x = date_third, y = period_footprint_total, group = household_ID)) + 
   geom_line()
+```
 
+A visual analysis does not suggest any clear change in foodprint.
+
+#### Paired t-test statistic
+```{r}
 ttest_data <- 
   test %>% 
   select(household_ID,date_third,period_footprint_ave) %>% 
@@ -185,6 +256,7 @@ ttest_data <-
 t.test(x = ttest_data$period.1, y = ttest_data$period.3, paired = T)
 ```
 
+Non-significant. The is no indication of foodprint change.
 
 ```{r eval=FALSE, include=FALSE}
 #---discard this. rm ANOVA does not work with 'missing' values
@@ -192,8 +264,8 @@ t.test(x = ttest_data$period.1, y = ttest_data$period.3, paired = T)
 #test effect (repeated measures)
 
 # library("rstatix")
-rcpt_data_v2 %<>% mutate(household_ID = factor(household_ID), receipt_id = as.numeric(receipt_id))
+receipt_data %<>% mutate(household_ID = factor(household_ID), hh_receipt_id = as.numeric(hh_receipt_id))
 
-res.aov <- anova_test(data = rcpt_data_v2, dv = rcpt_C02_ave, wid = household_ID, within = receipt_id)
+res.aov <- anova_test(data = receipt_data, dv = rcpt_CO2_g_100g, wid = household_ID, within = hh_receipt_id)
 get_anova_table(res.aov)
 ```

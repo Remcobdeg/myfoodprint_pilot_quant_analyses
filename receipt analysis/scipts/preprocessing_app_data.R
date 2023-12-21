@@ -120,11 +120,11 @@ rcpt_data_v2 <- purchase_data %>%
   #note: because we want to keep more variables than the ones we group by, we use mutate, select, distinct
   mutate(
     rcpt_C02_ave = sum(item_footprint_g_100g * item_weight_g * item_units) / sum(item_weight_g * item_units),
-    rcpt_C02_total = sum(item_footprint_g_100g * item_weight_g * item_units),
-    rcpt_weight = sum(item_weight_g * item_units),
+    rcpt_C02_total = sum(item_footprint_g_100g * item_weight_g/100 * item_units),
+    rcpt_weight_kg = sum(item_weight_g/1000 * item_units),
     rcpt_items_n = n()
   ) %>%
-  select(user_ID:rcpt_items_n) %>% 
+  select(date_recorded, user_ID:rcpt_items_n) %>% 
   distinct(date_recorded, household_ID, hh_start, .keep_all = T) # Note: Because both participants of household 9 provided receipts for the pre-loaded data we have to specify the variables in `distinct()`. Otherwise we get two rows for the first receipt of household 9 which messes up our analyses.
 
 ## add a sequence number for each receipt per person
@@ -132,3 +132,43 @@ rcpt_data_v2 %<>% group_by(household_ID) %>% mutate(hh_receipt_id = row_number()
 
 # export
 rcpt_data_v2 %>% write_csv(here("receipt analysis","data","processed","receipt_level_data.csv"))
+
+
+# update user_data with receipt counts and export------------------------------------
+
+#calculate number of receipts per household
+rcpt_data_v2 %<>%
+  group_by(household_ID) %>%
+  filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+  mutate(n_receipts_hh = n_distinct(day_recorded))
+
+#calculate number of receipts per participant
+rcpt_data_v2 %<>% 
+  group_by(user_ID) %>%
+  filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+  mutate(n_receipts_user = n_distinct(day_recorded))
+
+rcpt_data_v2 %<>% ungroup()
+
+## update user data with receipt counts
+#we have to add n_receipts_hh and n_receipts_user separately, as not all users uploaded receipts 
+user_data %<>%
+  full_join(
+    .,
+    rcpt_data_v2 %>% 
+      select(household_ID,n_receipts_hh) %>%
+      distinct()
+  )
+user_data %<>%
+  full_join(
+    .,
+    rcpt_data_v2 %>% 
+      select(user_ID,n_receipts_user) %>%
+      distinct()
+  )
+
+#those we fill with 0
+user_data$n_receipts_user %<>% replace_na(0)
+
+user_data %>% write_csv(here("common data","processed","participant_data.csv"))
+

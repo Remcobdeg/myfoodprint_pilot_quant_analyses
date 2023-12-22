@@ -23,20 +23,13 @@ receipt_data <- read_csv(here("receipt analysis","data","processed","receipt_lev
 
 ## Descriptives
 
+### Receipt level descriptives
+
+Those scanned in the app (not the pre-loaded receipts).
+
 ```{r}
 #number of receipts scanned in app -- this excludes the receipts provided as starting data.
 
-# #calculate number of receipts per household
-# receipt_data %>%
-#   group_by(household_ID) %>%
-#   filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
-#   summarise(n_receipts = n_distinct(day_recorded))
-# 
-# #calculate number of receipts per participant
-# receipt_data %>% 
-#   group_by(user_ID) %>%
-#   filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
-#   summarise(n_receipts = n_distinct(day_recorded))
 
 #hh level, user level, receipt level TODO!
 
@@ -57,14 +50,56 @@ receipt_data %>%
   filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
   select(day_recorded, rcpt_CO2_g_100g, rcpt_CO2_kg, rcpt_weight_kg, rcpt_items_n) %>% 
   summary()
-
-
-#average, min, max of scanned receipts
-#number of scanned items
-#average, min, max of scanned receipts ave footprint, total footprint
 ```
 
-Description of receipts.
+```{r}
+#boxplots of receipt descriptives
+receipt_data %>% 
+  ungroup() %>%
+  filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+  select(day_recorded, rcpt_CO2_g_100g, rcpt_CO2_kg, rcpt_weight_kg, rcpt_items_n) %>% 
+  pivot_longer(cols = everything(), names_to = 'factor', values_to = 'unit') %>% 
+  mutate(factor = factor(factor)) %>% 
+  ggplot(aes(x=factor,y=unit)) + geom_boxplot() + facet_wrap(.~factor, scales = "free", ncol = 5)
+```
+
+### Receipt level descriptives grouped by household
+
+```{r fig.height = 8}
+#boxplots of receipt descriptives
+receipt_data %>% 
+  ungroup() %>%
+  filter(date_recorded > hh_start) %>% #remove pre-loaded receipts
+  select(day_recorded, rcpt_CO2_g_100g, rcpt_CO2_kg, rcpt_weight_kg, rcpt_items_n, household_ID) %>% 
+  group_by(household_ID) %>%
+  mutate(n_receipts = n_distinct(day_recorded)) %>%
+  ungroup() %>%
+  pivot_longer(cols = !household_ID, names_to = 'factor', values_to = 'unit') %>% 
+  mutate(factor = factor(factor), household_ID = factor(household_ID)) %>% 
+  ggplot(aes(x=household_ID,y=unit)) + geom_boxplot() + facet_wrap(factor~., scales = "free", ncol = 1)
+```
+
+### Household level descriptives (aggregated receipts)
+
+```{r}
+household_descriptives <-
+  receipt_data %>% 
+  filter(date_recorded > hh_start) %>%
+  group_by(household_ID) %>%
+  reframe(
+    hh_CO2_kg = sum(rcpt_CO2_kg),
+    hh_weight_kg = sum(rcpt_weight_kg),
+    hh_items_n = sum(rcpt_items_n)
+  ) %>%
+  mutate(hh_CO2_g_100g = hh_CO2_kg/hh_weight_kg*100)
+  
+#boxplots of household descriptives
+household_descriptives %>% 
+  ungroup() %>%
+  pivot_longer(cols = !household_ID, names_to = 'factor', values_to = 'unit') %>% 
+  mutate(factor = factor(factor)) %>% 
+  ggplot(aes(x=factor,y=unit)) + geom_boxplot() + facet_wrap(.~factor, scales = "free", ncol = 5)
+```
 
 ## Visualize foodprint change
 
@@ -204,6 +239,10 @@ skimack_data <- receipt_data %>% select(household_ID, hh_receipt_id, rcpt_CO2_g_
 skimack_data %<>% pivot_wider(names_from = household_ID, values_from = rcpt_CO2_g_100g)
 skimack_data %<>% select(!hh_receipt_id)
 skimack_data %>% as.matrix() %>% Ski.Mack(.) #there is no clear difference in receipt number
+
+# Alternatives:
+# Härdle, Wolfgang, et al. “A Review of Nonparametric Time Series Analysis.” International Statistical Review / Revue Internationale de Statistique, vol. 65, no. 1, 1997, pp. 49–72. JSTOR, https://doi.org/10.2307/1403432. Accessed 22 Dec. 2023.
+# http://lib.uib.kz/wp-content/uploads/2019/04/Nonlinear-Time-Series..-Nonparametric-and-Parametric-Methods-Fan-J-2003.pdf
 ```
 
 The non-parametric test shows no significant impact of time.
@@ -222,16 +261,16 @@ test <- receipt_data %>%
   group_by(household_ID, date_third) %>%
   mutate(
     period_footprint_total = sum(rcpt_CO2_kg),
-    period_weight_total = sum(rcpt_weight),
-    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight), .after = rcpt_CO2_g_100g
+    period_weight_total = sum(rcpt_weight_kg),
+    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight_kg), .after = rcpt_CO2_g_100g
   )
 
 test <- receipt_data %>% 
   group_by(household_ID, date_third) %>%
   reframe(
     period_footprint_total = sum(rcpt_CO2_kg),
-    period_weight_total = sum(rcpt_weight),
-    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight)
+    period_weight_total = sum(rcpt_weight_kg),
+    period_footprint_ave = sum(rcpt_CO2_kg)/sum(rcpt_weight_kg)
   )
 ```
 #### Visual trends

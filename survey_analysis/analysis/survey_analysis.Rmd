@@ -1,0 +1,128 @@
+---
+title: "MyFoodPrint survey analysis"
+author: "Remco Benthem de Grave"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+# knitr::opts_knit$set(root.dir = '..')
+```
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(psych)
+library(here)
+library(lattice)
+```
+
+
+```{r}
+# surveyT2 <- read_csv(file.path("..","datasets","processed","surveyT2.csv"))
+source(here("preprocessing_scripts","preprocess_survey_T1.R"))
+source(here("preprocessing_scripts","preprocess_survey_T2.R"))
+source(here("preprocessing_scripts","calculate_aggregates.R"))
+```
+
+# Survey analyses
+
+## Descriptives
+
+### Survey meta data
+```{r}
+#graph of distribution of start dates
+surveyT1T2_aggr %>% 
+  ggplot(aes(x=StartDate,color=survey_id)) +
+  geom_density(position = "identity") +
+  geom_point(y=0,shape=4) +
+  theme_ipsum() +
+  labs(x = "Survey", y="Date")
+```
+
+```{r}
+densityplot(as.numeric(surveyT1$StartDate %>% as.numeric()))
+```
+
+
+```{r}
+#graph of distribution of start dates
+surveyT1T2_aggr %>% 
+  arrange((survey_id)) %>% 
+  ggplot(aes(x=survey_id,y=StartDate)) +
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9, shape=3) +
+  # facet_wrap(.~survey_id, scales = "free") + 
+  theme_ipsum() +
+  labs(x = "Survey", y="Date")
+```
+
+```{r}
+surveyT1T2_aggr %>%
+  group_by(survey_id) %>%
+  describe()
+```
+
+```{r}
+densityplot(surveyT1T2_aggr$age)
+```
+
+
+
+calculate stats
+show differences visually
+
+```{r}
+#merge survey results
+#note differences in columns with T1 and T2 for knowledge, self-efficacy and attitudes
+
+# survey_data <- left_join(surveyT1,surveyT2, by = "user_ID", suffix = c("_T1","_T2"))
+survey_data <- bind_rows(surveyT1,surveyT2,.id = "timepoint")
+
+#
+t.test(surveyT1$knowledge_score,surveyT2$knowledge_score)
+t.test(surveyT1$SelfEff,surveyT2$SelfEff)
+t.test(surveyT1$env_attitude ,surveyT2$env_attitude) #not different
+```
+
+
+
+
+make some graphs - barcharts of ratings; average knowledge etc + variance
+
+```{r}
+#bar charts of UX rating and help scores
+#LOOK INTO: barchart different factor labels, seperated by facets
+#BUT FIRST ONE CHART
+#HORIZONAL STACKED BAR CHART; LABELS NEXT TO BAR? SEE NUSSBAUM
+#INVESTIGATE HOW TO DO THE LEGEND. CAN IT BE COLORED TEXT? 
+#MAYBE AS VERY MUCH A TO VERY MUCH BE. OR LABELS LEFT AND RIGHT OF GRAPH?
+#VERY MUCH - TO VERY MUCH +
+#VARIABLE NAME NEEDS TO BE PRESENTED AS E.G. OBSTRUCTIVE (-) / SUPPORTIVE (+)
+
+surveyT2 %>% 
+  select()
+  ggplot(
+    aes()
+  )
+
+```
+
+how to do this fast. get some fast graphs/statistics -->
+horizonal bars of averages
+
+```{r}
+surveyT2 %>% 
+  select(env_attitude:knowledge_score) %>%
+  mutate(knowledge_score = knowledge_score*7/100) %>%
+  pivot_longer(cols = everything()) %>%
+  ggplot(
+    aes(y = name, x = value)
+  ) +
+  geom_boxplot()
+
+```
+
+
+

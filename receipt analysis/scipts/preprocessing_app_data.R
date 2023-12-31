@@ -1,3 +1,6 @@
+# DESCRIBING THE STEPS AS A PROCESS FOR THE WRITE-UP: the receipt data that was recorded in the application and stored in MongoDB is downloaded. User identifiers in MongoDB are mapped onto study IDs. Data on start dates is added such that we can distinguish receipts that were scanned by the researcher as part of the preloaded data and receipts that are added during the study period. 
+# Aggregated values are calculated per receipt. Per receipt a weight-corrected average footprint is calculated, as well as the total weight, number of items and footprint of (recorded) purchases on the receipt. Receipts that we scanned by the researcher as part of pre-loaded data are combined into a single receipt
+
 library(tidyverse)
 library(magrittr)
 library(jsonlite)

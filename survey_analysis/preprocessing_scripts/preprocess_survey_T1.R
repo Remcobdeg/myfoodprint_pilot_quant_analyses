@@ -59,34 +59,31 @@ surveyT1 <-
     suffix = c("","_level")
   )
 
-#test factor creation process -- this needs to be repeated in subsequent files
-for(var in T1factors){
-  surveyT1[var] <- factor(surveyT1[var], levels = surveyT1[paste0(var,'_level')])
-}
-
-#retrospectively identify the factors in the df
-names(surveyT1) %>% .[str_detect(.,'_level')] %>% str_replace_all(.,'_level','')
-
-
-
-# next --------------------------------------------------------------------
-
-#TO DO: MERGE THE OTHER LEVELS INTO THE FACTORS (BEFORE MAKING FACTORS?) -- THIS ONLY WORKS IF THERE IS ONLY 1 'OTHER'
-
+# remove redundant rows and columns --------------------------------------------------------------------
 
 ##now remove test surveys
 surveyT1 %<>% filter(EndDate > ymd("20230423"))
 
 ##remove columns that we're not interested in
-surveyT1 %<>% select(StartDate,duration_sec,user_ID:knowledge_2_Strawb_Spain)
+surveyT1 %<>% 
+  select(
+    StartDate,duration_sec,user_ID:knowledge_2_Strawb_Spain,
+    paste0(T1factors,"_level")
+  )
 
 #merge columns of 'other' descriptions
-surveyT1 %<>% mutate(sex = ifelse(is.na(sex_other),sex,paste(sex,sex_other)))
+# surveyT1 %<>% mutate(sex = ifelse(is.na(sex_other),sex,paste(sex,sex_other)))
+#there is only one 'sex other' variant, so we can use it to replace 'other'
+surveyT1 %<>% mutate(sex = ifelse(is.na(sex_other),sex,"non-binary"))
 surveyT1 %<>% select(!sex_other)
+#there is only one adults_other variant, so we can safely use it to replace 'other'
 surveyT1 %<>% mutate(adults = ifelse(is.na(adults_other),adults,adults_other))
+surveyT1 %<>% mutate(adults = as.numeric(adults))
 surveyT1 %<>% select(!adults_other)
-surveyT1 %<>% mutate(children = ifelse(is.na(children_other),children,children_other))
+# surveyT1 %<>% mutate(children = ifelse(is.na(children_other),children,children_other))
+#there is no completed field for children other
 surveyT1 %<>% select(!children_other)
+#there is only one variant for diet_other so we can safely replace the 'other' 
 surveyT1 %<>% mutate(diet = ifelse(is.na(diet_other),diet,diet_other))
 surveyT1 %<>% select(!diet_other)
 
@@ -95,21 +92,25 @@ surveyT1$user_ID[18] <- 39
 surveyT1$user_ID[8] <- 20
 
 
-##convert likert scale answers to factors
-levels_statements_1 <- c("strongly disagree", "disagree", "somewhat disagree", "neither agree nor disagree", "somewhat agree", "agree", "strongly agree")
+# conduct factor tests ------------------------------------------------
 
-surveyT1 %<>% 
-  mutate(
-    across(c(env_attitude_1:SelfEff_3), ~ factor(str_to_lower(.x), levels = levels_statements_1))
-  )
+#test factor creation process -- this needs to be repeated in subsequent files
+for(var in T1factors){
+  surveyT1[var] <- factor(surveyT1[var], levels = surveyT1[paste0(var,'_level')])
+}
+
+#retrospectively identify the factors in the df
+names(surveyT1) %>% .[str_detect(.,'_level')] %>% str_replace_all(.,'_level','')
+
+# ##convert likert scale answers to factors
+# levels_statements_1 <- c("strongly disagree", "disagree", "somewhat disagree", "neither agree nor disagree", "somewhat agree", "agree", "strongly agree")
+# 
+# surveyT1 %<>% 
+#   mutate(
+#     across(c(env_attitude_1:SelfEff_3), ~ factor(str_to_lower(.x), levels = levels_statements_1))
+#   )
 
 
-# add factor level columns ------------------------------------------------
-
-surveyT1 %<>% mutate(age_level = as.numeric(factor(age)), .after = age)
-surveyT1 %<>% mutate(sex = fct_lump_min(sex, 3))
-surveyT1 %<>% mutate(sex_level = as.numeric(sex), .after = sex)
-surveyT1 %<>% mutate(degree)
-surveyT1 %>% count(degree)
+# save file ---------------------------------------------------------------
 
 write_csv(surveyT1,here("survey_analysis","datasets","processed","surveyT1.csv"))

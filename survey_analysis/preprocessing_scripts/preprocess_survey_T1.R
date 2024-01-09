@@ -96,7 +96,10 @@ surveyT1$user_ID[8] <- 20
 
 #test factor creation process -- this needs to be repeated in subsequent files
 for(var in T1factors){
-  surveyT1[var] <- factor(surveyT1[var], levels = surveyT1[paste0(var,'_level')])
+  #make sure that the factor is organised
+  surveyT1 %<>% arrange(get(paste0(var,'_level')))
+  surveyT1[var] <- factor(surveyT1[var] %>% pull(.)) 
+  # surveyT1[var] <- factor(surveyT1[var], levels = (surveyT1[[paste0(var,'_level')]] %>% unique(.) %>% sort(.)))
 }
 
 #retrospectively identify the factors in the df

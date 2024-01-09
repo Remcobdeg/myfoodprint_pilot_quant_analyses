@@ -12,26 +12,12 @@ library(here)
 
 # load data ---------------------------------------------------------------
 
-# Option 1: read datasets and convert factors with _levels columns 
+# Option 1: read datasets and convert factors with separate script
 surveyT1 <- read_csv(here("survey_analysis","datasets","processed","surveyT1.csv"))
 surveyT2 <- read_csv(here("survey_analysis","datasets","processed","surveyT2.csv"))
 
-# identify the factors
-T1factors <- names(surveyT1) %>% .[str_detect(.,'_level')] %>% str_replace_all(.,'_level','')
-T2factors <- names(surveyT2) %>% .[str_detect(.,'_level')] %>% str_replace_all(.,'_level','')
-
-#test factor creation process -- this needs to be repeated in subsequent files
-for(var in T1factors){
-  #make sure that the factor is organised
-  surveyT1 %<>% arrange(get(paste0(var,'_level')))
-  surveyT1[var] <- factor(surveyT1[var] %>% pull(.), levels = unique(surveyT1[var] %>% pull(.))) 
-}
-
-for(var in T2factors){
-  #make sure that the factor is organised
-  surveyT2 %<>% arrange(get(paste0(var,'_level')))
-  surveyT2[var] <- factor(surveyT2[var] %>% pull(.), levels = unique(surveyT2[var] %>% pull(.))) 
-}
+# convert to factors
+source(here("survey_analysis","preprocessing_scripts","convert_to_factor.R"))
 
 # # Option 2: load pre-processed survey data (where factors are already ordered appropriately)
 # source(here("survey_analysis","preprocessing_scripts","preprocess_survey_T1.R"))
@@ -199,8 +185,7 @@ surveyT1 %<>% mutate(
 
 # for each participant, calculate the composite concept score by taking the average of the concept items
 surveyT2_aggr <- surveyT2 %>% 
-  mutate(across(where(is.factor), as.integer)) %>%
-  select(!contains('_level'))
+  mutate(across(where(is.factor), as.integer))
 surveyT2_aggr %<>% 
   mutate(
     env_attitude_3 = 8-env_attitude_3_inv,
@@ -220,7 +205,6 @@ surveyT2_aggr %<>%
 
 surveyT1_aggr <- surveyT1 %>% 
   mutate(across(where(is.factor), as.integer)) %>%
-  select(!contains('_level')) %>% 
   select(!age:apps_name) #don't use these in aggregation
 surveyT1_aggr %<>% 
   mutate(
@@ -250,70 +234,13 @@ survey_data_all %<>% mutate(across(survey_id, ~ case_match(.,"1" ~ "T1 (start)",
 #check how effect size for paired T-test is calculated, and how it is calculated for mixed methods.
 #check how cronbach's alpha should be calculated. 
 #check assumptions paired-T
-#so what is the dataframe that I need? 
 # TO BE DONE: CALCULATE EFFECT SIZES. CONSIDER TRANSFORMING DATA TO HELP THE MODEL FIT
 
 # https://stats.stackexchange.com/questions/257985/how-can-i-derive-effect-sizes-in-lme4-and-describe-the-magnitude-of-fixed-effect
 
-
-# #TRY BINDING ROWS OF THE AGGREGATES
-# 
-# surveyT1T2_aggr <- bind_rows(surveyT1_aggr,surveyT2_aggr, .id = "survey_id")
-# #rename 1 to T1 and 2 t T2
-# surveyT1T2_aggr %<>% mutate(across(survey_id, ~ case_match(.,"1" ~ "T1 (start)","2" ~ "T2 (end)")))
-# 
-# # add concept scores to the survey data dataframe -------------------------
-# 
-# #add this data to the original dataframe
-# # surveyT2 %<>% 
-# #   add_column(env_attitude = surveyT2_aggr$env_attitude, .after = env_attitude_4) %>%
-# #   add_column(SelfEff = surveyT2_aggr$SelfEff, .after = SelfEff_3) %>%
-# #   add_column(intention = surveyT2_aggr$intention, .after = intention_2) %>%
-# #   add_column(spillover = surveyT2_aggr$spillover, .after = spillover_2) %>%
-# #   add_column(knowledge_score = surveyT2_aggr$knowledge_score, .after = knowledge_2_Strawb_Spain) %>%
-# #   add_column(UX8 = surveyT2_aggr$UX8, .after = UX_8_leading) %>%
-# #   add_column(UX9 = surveyT2_aggr$UX9, .after = state_accept_alt) %>%
-# #   add_column(UX9 = surveyT2_aggr$helpful, .after = state_helped_change)
-# 
-# surveyT2 %<>% 
-#   add_column(env_attitude = surveyT2_aggr$env_attitude) %>%
-#   add_column(SelfEff = surveyT2_aggr$SelfEff) %>%
-#   add_column(intention = surveyT2_aggr$intention) %>%
-#   add_column(spillover = surveyT2_aggr$spillover) %>%
-#   add_column(knowledge_score = surveyT2_aggr$knowledge_score) %>%
-#   add_column(UX8 = surveyT2_aggr$UX8) %>%
-#   add_column(UX9 = surveyT2_aggr$UX9) %>%
-#   add_column(helpful = surveyT2_aggr$helpful)
-# 
-# rm(surveyT2_aggr)  
-# 
-# surveyT2 %<>% select(
-#   StartDate:user_ID, 
-#   env_attitude:knowledge_score,  
-#   state_helped_goals:state_helped_change,
-#   helpful,
-#   UX_1_supportive:state_accept_alt,
-#   UX8:UX9,
-#   state_use_future
-# )
-# 
-# 
-# surveyT1 %<>% 
-#   add_column(env_attitude = surveyT1_aggr$env_attitude) %>%
-#   add_column(SelfEff = surveyT1_aggr$SelfEff) %>%
-#   add_column(knowledge_score = surveyT1_aggr$knowledge_score)
-# 
-# rm(surveyT1_aggr)  
-# 
-# surveyT1 %<>% select(
-#   StartDate:apps_name, 
-#   barriers_desc,
-#   env_attitude:knowledge_score
-# )
-
 # calculate internal validity (cronbacher's alpha) ------------------------------------
 
-cron_alphas_ <-
+cron_alphas <-
   tibble(
     alpha_attitude = 
       (survey_data_all %>% 
@@ -354,47 +281,11 @@ cron_alphas_ <-
     alpha_helped = 
       (survey_data_all %>% 
          select(contains("state_helped")) %>% 
-         select(!contains("_level")) %>%
          mutate(across(where(is.factor), as.integer)) %>%
          psych::alpha()) %>% .$total %>% .$raw_alpha,
   )
 #note, the warning refers to knowledge, which doesn't have categories really
 
-# #calculate cronbacher's alpha
-# cron_alphas <-
-#   tibble(
-#     alpha_attitude = 
-#       (surveyT2_aggr %>% 
-#          select(env_attitude_1, env_attitude_2, env_attitude_3, env_attitude_4) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#     alpha_self_eff = 
-#       (surveyT2_aggr %>% 
-#          select(SelfEff_1:SelfEff_3) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#     alpha_intent = 
-#       (surveyT2_aggr %>% 
-#          select(intention_1,intention_2) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#     alpha_spillover = 
-#       (surveyT2_aggr %>% 
-#          select(spillover_1,spillover_2) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#     alpha_knowledge = 
-#       (surveyT2_aggr %>% 
-#          select(knowledge_1_score,knowledge_2_score) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#     alpha_UX8 = 
-#       (surveyT2_aggr %>% 
-#          select(UX_1_supportive:UX_8_leading) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,    
-#     alpha_UX9 = 
-#       (surveyT2_aggr %>% 
-#          select(UX_1_supportive:state_accept_alt) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,    
-#     alpha_helped = 
-#       (surveyT2_aggr %>% 
-#          select(contains("state_helped")) %>% 
-#          psych::alpha()) %>% .$total %>% .$raw_alpha,
-#   )
-
+write_csv(survey_data_all,here("survey_analysis","datasets","processed","survey_data_all.csv"))
+write_csv(cron_alphas,here("survey_analysis","datasets","processed","cron_alphas.csv"))
 

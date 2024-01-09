@@ -9,9 +9,6 @@ library(here)
 
 #read the Timepoint-1 survey data. It has 3 lines of headers, so we remove the first two
 surveyT1 <- read_csv(here("survey_analysis","datasets","original","myfoodprint_t1_v2_23_factor_strings June 2023_12.21.csv"), skip = 2)
-#there is another copy of the survey responses at T1 with numeric values for the questions, rather than the answer strings. This is helpful for organizing the responses into factors.
-surveyT1numeric <- read_csv(here("survey_analysis","datasets","original","myfoodprint_t1_v2_30_factor_numbers+December+2023_16.50.csv"), skip = 2)
-
 
 # rename DF headers -------------------------------------------------------
 
@@ -42,22 +39,6 @@ surveyT1Descriptions$new_header[48:54] = paste("knowledge_1",levels_knowledge_1,
 surveyT1Descriptions$new_header[55:62] = paste("knowledge_2",levels_knowledge_2,sep = "_")
 
 names(surveyT1) <- surveyT1Descriptions$new_header
-names(surveyT1numeric) <- surveyT1Descriptions$new_header
-
-# add level columns for factors --------------------------------------------------------------------
-
-T1factors <-
-  surveyT1 %>% 
-  select(c(age,sex,degree,does_groceries,diet,share_store:`share_out-of-home`,env_attitude_1:SelfEff_3)) %>% 
-  names(.)
-
-surveyT1 <-
-  left_join(
-    surveyT1, 
-    surveyT1numeric %>% select(c(StartDate,user_ID,any_of(T1factors))), 
-    by = c("StartDate","user_ID"),
-    suffix = c("","_level")
-  )
 
 # remove redundant rows and columns --------------------------------------------------------------------
 
@@ -67,8 +48,7 @@ surveyT1 %<>% filter(EndDate > ymd("20230423"))
 ##remove columns that we're not interested in
 surveyT1 %<>% 
   select(
-    StartDate,duration_sec,user_ID:knowledge_2_Strawb_Spain,
-    paste0(T1factors,"_level")
+    StartDate,duration_sec,user_ID:knowledge_2_Strawb_Spain
   )
 
 #merge columns of 'other' descriptions
@@ -90,28 +70,6 @@ surveyT1 %<>% select(!diet_other)
 #adjust some misrecorded user IDs
 surveyT1$user_ID[18] <- 39
 surveyT1$user_ID[8] <- 20
-
-
-# conduct factor tests ------------------------------------------------
-
-#test factor creation process -- this needs to be repeated in subsequent files
-for(var in T1factors){
-  #make sure that the factor is organised
-  surveyT1 %<>% arrange(get(paste0(var,'_level')))
-  surveyT1[var] <- factor(surveyT1[var] %>% pull(.)) 
-  # surveyT1[var] <- factor(surveyT1[var], levels = (surveyT1[[paste0(var,'_level')]] %>% unique(.) %>% sort(.)))
-}
-
-#retrospectively identify the factors in the df
-names(surveyT1) %>% .[str_detect(.,'_level')] %>% str_replace_all(.,'_level','')
-
-# ##convert likert scale answers to factors
-# levels_statements_1 <- c("strongly disagree", "disagree", "somewhat disagree", "neither agree nor disagree", "somewhat agree", "agree", "strongly agree")
-# 
-# surveyT1 %<>% 
-#   mutate(
-#     across(c(env_attitude_1:SelfEff_3), ~ factor(str_to_lower(.x), levels = levels_statements_1))
-#   )
 
 
 # save file ---------------------------------------------------------------

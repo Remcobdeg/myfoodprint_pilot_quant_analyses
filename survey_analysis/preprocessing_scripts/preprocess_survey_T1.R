@@ -67,9 +67,18 @@ surveyT1 %<>% select(!children_other)
 surveyT1 %<>% mutate(diet = ifelse(is.na(diet_other),diet,diet_other))
 surveyT1 %<>% select(!diet_other)
 
+
+# adjust data errors ------------------------------------------------------
+
 #adjust some misrecorded user IDs
 surveyT1$user_ID[18] <- 39
 surveyT1$user_ID[8] <- 20
+
+#harmonize the lowest level in food source share questions (some use "none/very little", while later questions use "very little")
+surveyT1 %<>%
+  mutate(
+    across(contains('share_'), ~ ifelse(. == "very little","none/very little",.))
+  )
 
 
 # save file ---------------------------------------------------------------

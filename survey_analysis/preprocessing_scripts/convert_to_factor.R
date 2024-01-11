@@ -2,12 +2,6 @@
 
 ##convert likert scale answers to factors
 levels_statements_1 <- c("strongly disagree", "disagree", "somewhat disagree", "neither agree nor disagree", "somewhat agree", "agree", "strongly agree")
-
-surveyT1 %<>%
-  mutate(
-    across(c(env_attitude_1:SelfEff_3), ~ factor(str_to_lower(.x), levels = levels_statements_1))
-  )
-
 levels_age <- c("18-24 years old", "25-34 years old", "35-44 years old", "55-64 years old")
 levels_sex <- c("Man","Woman","non-binary")
 levels_degree <- 
@@ -23,20 +17,24 @@ levels_does_groceries <- c("I do","Another person in my household","We do most g
 levels_diet <- c("Omnivorous (no restrictions)", "Flexitarian", "Pescaterian", "Vegetarian", "Dairy free")
 levels_share <- c("none/very little","some","about half","most","almost all")
 
-surveyT1 %<>%
-  mutate(
-    across(contains('share_'), ~ ifelse(. == "very little","none/very little",.))
-  )
+if(exists("surveyT1")){
+  surveyT1 %<>%
+    mutate(
+      across(c(env_attitude_1:SelfEff_3), ~ factor(str_to_lower(.x), levels = levels_statements_1))
+    )
+  
+  surveyT1 %<>%
+    mutate(
+      age = factor(age, levels = levels_age),
+      sex = factor(sex, levels = levels_sex),
+      degree = factor(degree, levels = levels_degree),
+      does_groceries = factor(does_groceries, levels = levels_does_groceries),
+      diet = factor(diet, levels = levels_diet),
+      across(share_store:`share_out-of-home`, ~ factor(str_to_lower(.x), levels = levels_share))
+    )
+}
 
-surveyT1 %<>%
-  mutate(
-    age = factor(age, levels = levels_age),
-    sex = factor(sex, levels = levels_sex),
-    degree = factor(degree, levels = levels_degree),
-    does_groceries = factor(does_groceries, levels = levels_does_groceries),
-    diet = factor(diet, levels = levels_diet),
-    across(share_store:`share_out-of-home`, ~ factor(str_to_lower(.x), levels = levels_share))
-  )
+
 
 # create factors surveyT2---------------------------------------------
 
@@ -54,24 +52,64 @@ levels_UX_7 <- c("Very conventional","Conventional","Slightly conventional","Nei
 levels_UX_8 <- c("Very usual","Usual","Slightly usual","Neither leading edge nor usual","Slightly leading edge","Leading edge","Very leading edge")
 levels_statements_4 <- c("Very difficult","Difficult","Slightly difficult","Neither easy nor difficult","Slightly easy","Easy","Very easy")
 
-surveyT2 %<>%
-  mutate(
-    across(c(env_attitude_1:SelfEff_3, spillover_1:spillover_2, state_helped_goals:state_helped_change,state_use_future), ~ factor(str_to_lower(.x), levels = levels_statements_1))
-  )
-surveyT2 %<>%
-  mutate(
-    across(intention_1, ~ factor(.x, levels = levels_statements_2))
-  )
-surveyT2 %<>%
-  mutate(
-    across(intention_2, ~ factor(.x, levels = levels_statements_3)),
-    across(UX_1_supportive, ~ factor(.x, levels = levels_UX_1)),
-    across(UX_2_easy, ~ factor(.x, levels = levels_UX_2)),
-    across(UX_3_efficient, ~ factor(.x, levels = levels_UX_3)),
-    across(UX_4_clear, ~ factor(.x, levels = levels_UX_4)),
-    across(UX_5_exciting, ~ factor(.x, levels = levels_UX_5)),
-    across(UX_6_interesting, ~ factor(.x, levels = levels_UX_6)),
-    across(UX_7_inventive, ~ factor(.x, levels = levels_UX_7)),
-    across(UX_8_leading, ~ factor(.x, levels = levels_UX_8)),
-    across(state_accept_alt, ~ factor(.x, levels = levels_statements_4)),
-  )
+if(exists("surveyT2")){
+  surveyT2 %<>%
+    mutate(
+      across(c(env_attitude_1:SelfEff_3, spillover_1:spillover_2, state_helped_goals:state_helped_change,state_use_future), ~ factor(str_to_lower(.x), levels = levels_statements_1))
+    )
+  surveyT2 %<>%
+    mutate(
+      across(intention_1, ~ factor(.x, levels = levels_statements_2))
+    )
+  surveyT2 %<>%
+    mutate(
+      across(intention_2, ~ factor(.x, levels = levels_statements_3)),
+      across(UX_1_supportive, ~ factor(.x, levels = levels_UX_1)),
+      across(UX_2_easy, ~ factor(.x, levels = levels_UX_2)),
+      across(UX_3_efficient, ~ factor(.x, levels = levels_UX_3)),
+      across(UX_4_clear, ~ factor(.x, levels = levels_UX_4)),
+      across(UX_5_exciting, ~ factor(.x, levels = levels_UX_5)),
+      across(UX_6_interesting, ~ factor(.x, levels = levels_UX_6)),
+      across(UX_7_inventive, ~ factor(.x, levels = levels_UX_7)),
+      across(UX_8_leading, ~ factor(.x, levels = levels_UX_8)),
+      across(state_accept_alt, ~ factor(.x, levels = levels_statements_4)),
+    )
+}
+
+if(exists("survey_data_all")){
+
+  survey_data_all %<>%
+    mutate(
+      age = factor(age, levels = levels_age),
+      sex = factor(sex, levels = levels_sex),
+      degree = factor(degree, levels = levels_degree),
+      does_groceries = factor(does_groceries, levels = levels_does_groceries),
+      diet = factor(diet, levels = levels_diet),
+      across(share_store:`share_out-of-home`, ~ factor(str_to_lower(.x), levels = levels_share))
+    )
+  
+  survey_data_all %<>%
+    mutate(
+      across(c(env_attitude_1:SelfEff_3, spillover_1:spillover_2, state_helped_goals:state_helped_change,state_use_future), ~ factor(str_to_lower(.x), levels = levels_statements_1))
+    )
+  
+  survey_data_all %<>%
+    mutate(
+      across(intention_1, ~ factor(.x, levels = levels_statements_2))
+    )
+  
+  survey_data_all %<>%
+    mutate(
+      across(intention_2, ~ factor(.x, levels = levels_statements_3)),
+      across(UX_1_supportive, ~ factor(.x, levels = levels_UX_1)),
+      across(UX_2_easy, ~ factor(.x, levels = levels_UX_2)),
+      across(UX_3_efficient, ~ factor(.x, levels = levels_UX_3)),
+      across(UX_4_clear, ~ factor(.x, levels = levels_UX_4)),
+      across(UX_5_exciting, ~ factor(.x, levels = levels_UX_5)),
+      across(UX_6_interesting, ~ factor(.x, levels = levels_UX_6)),
+      across(UX_7_inventive, ~ factor(.x, levels = levels_UX_7)),
+      across(UX_8_leading, ~ factor(.x, levels = levels_UX_8)),
+      across(state_accept_alt, ~ factor(.x, levels = levels_statements_4)),
+    )
+}
+

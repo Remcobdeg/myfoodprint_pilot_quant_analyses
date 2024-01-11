@@ -54,6 +54,9 @@ surveyT2 %<>% select(StartDate,duration_sec,user_ID:state_use_future)
 surveyT2 %<>% select(!state_helped_change_desc) #no one answered
 
 surveyT2 %<>% mutate(user_ID = as.numeric(user_ID))
+#id 16 registered as id 15 in the exit survey. This needs correction
+surveyT2 %<>% mutate(user_ID = ifelse(user_ID == 15,16,user_ID))
+
 
 
 

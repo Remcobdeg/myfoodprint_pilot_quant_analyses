@@ -286,6 +286,13 @@ cron_alphas <-
   )
 #note, the warning refers to knowledge, which doesn't have categories really
 
+
+# remove drop-out participants --------------------------------------------
+
+survey_data_all %<>% filter(user_ID != 15)
+
+# export ------------------------------------------------------------------
+
 write_csv(survey_data_all,here("survey_analysis","datasets","processed","survey_data_all.csv"))
 write_csv(cron_alphas,here("survey_analysis","datasets","processed","cron_alphas.csv"))
 

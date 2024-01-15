@@ -325,23 +325,11 @@ survey_data_all %<>%
   mutate(
     across(
       starts_with('survey_duration'), 
-      ~ as.difftime(., units = "secs")
+      ~ as.difftime(./60, units = "mins")
       # .names = "{.col}_diff"
     )
   )
 
-# displaying the duration in minutes does not seem to work without parsing it to a string
-# survey_data_all %<>%
-#   mutate(
-#     across(
-#       starts_with('survey_duration'), 
-#       dminutes
-#       # .names = "{.col}_diff"
-#     ),
-#     .after = "survey_duration_T1"
-#   )
-
-#   mutate( %>% minutes(.))
 
 # ADD PARTICIPANT AND HOUSEHOLD INFORMATION -------------------------------
 

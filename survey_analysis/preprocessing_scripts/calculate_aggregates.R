@@ -296,3 +296,84 @@ survey_data_all %<>% filter(user_ID != 15)
 write_csv(survey_data_all,here("survey_analysis","datasets","processed","survey_data_all.csv"))
 write_csv(cron_alphas,here("survey_analysis","datasets","processed","cron_alphas.csv"))
 
+
+# experiment with a wide version of survey data all -----------------------
+
+survey_data_all <- 
+  left_join(surveyT1, surveyT2, by = c("user_ID"), suffix = c('_T1','_T2'))
+
+#attempt to sort data by the way names appear in surveyT1
+survey_data_all %<>%
+  relocate(starts_with(names(surveyT1)))
+#this works!
+
+#participant ID in the front 
+survey_data_all %<>% relocate(user_ID)
+
+#update some names
+names(survey_data_all) <- 
+  names(survey_data_all) %>% 
+  str_replace_all(.,"StartDate","survey_date") %>%
+  str_replace_all(.,"duration_sec","survey_duration")
+
+#include a column with information about study duration (days)
+survey_data_all %<>%
+  mutate(study_duration = survey_date_T2 - survey_date_T1, .after = survey_date_T2)
+
+#convert duration to diff-time
+survey_data_all %<>%
+  mutate(
+    across(
+      starts_with('survey_duration'), 
+      ~ as.difftime(., units = "secs")
+      # .names = "{.col}_diff"
+    )
+  )
+
+# displaying the duration in minutes does not seem to work without parsing it to a string
+# survey_data_all %<>%
+#   mutate(
+#     across(
+#       starts_with('survey_duration'), 
+#       dminutes
+#       # .names = "{.col}_diff"
+#     ),
+#     .after = "survey_duration_T1"
+#   )
+
+#   mutate( %>% minutes(.))
+
+# ADD PARTICIPANT AND HOUSEHOLD INFORMATION -------------------------------
+
+## bring in user data
+user_data <- read_csv(here('common data','id_mapping_annonymous.csv')) 
+## convert the start date to a date object, recorded in UTC (not BST)
+user_data %<>% mutate(start_date = dmy_hm(start_date, tz="UTC"))
+## change the display of the start date to BST
+# attr(user_data$start_date, "tzone") <- "Europe/London"
+
+#rename some variables in user_data
+user_data %<>%
+  rename(
+    user_ID = ID
+  )
+
+# merge the two dataframes
+survey_data_all %<>% 
+  left_join(
+    user_data %>% select(!mongo_id) %>% distinct(),
+    .
+  )
+
+#verify time zone consistency
+attr(survey_data_all$start_date, "tzone")
+attr(survey_data_all$survey_date_T1, "tzone")
+attr(survey_data_all$survey_date_T2, "tzone")
+
+#all 3 in UTC
+
+
+# export survey data in wide format ---------------------------------------
+
+write_csv(survey_data_all,here("survey_analysis","datasets","processed","survey_data_all_wide.csv"))
+

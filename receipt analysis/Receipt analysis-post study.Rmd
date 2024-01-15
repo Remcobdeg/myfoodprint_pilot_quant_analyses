@@ -119,6 +119,7 @@ receipt_data %>%
   labs(y = "Weight-adjusted average gCO2/100g", x = "Receipt date (days since start)")
 ```
 A visual analysis does not suggest any clear change in foodprint.
+Note, facet labels are the household ID.
 
 ## Sequence of receipts
 

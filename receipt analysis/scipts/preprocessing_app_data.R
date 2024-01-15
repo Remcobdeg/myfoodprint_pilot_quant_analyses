@@ -81,8 +81,8 @@ user_data %<>% left_join(
 purchase_data %<>% left_join(.,user_data, by = c("mongo_id" = "mongo_id"))
 
 #verify time zone consistency
-attr(rcpt_data_v2$date_recorded, "tzone")
-attr(rcpt_data_v2$user_start, "tzone")
+attr(purchase_data$date_recorded, "tzone")
+attr(purchase_data$user_start, "tzone")
 
 # reset recorded_date to household start for receipt that were added as pre-loaded data
 purchase_data %<>%

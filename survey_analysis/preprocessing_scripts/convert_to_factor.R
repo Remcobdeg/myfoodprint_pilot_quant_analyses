@@ -113,3 +113,40 @@ if(exists("survey_data_all")){
     )
 }
 
+
+if(exists("survey_data_all_wide")){
+  
+  survey_data_all_wide %<>%
+    mutate(
+      age = factor(age, levels = levels_age),
+      sex = factor(sex, levels = levels_sex),
+      degree = factor(degree, levels = levels_degree),
+      does_groceries = factor(does_groceries, levels = levels_does_groceries),
+      diet = factor(diet, levels = levels_diet),
+      across(share_store:`share_out-of-home`, ~ factor(str_to_lower(.x), levels = levels_share))
+    )
+  
+  survey_data_all_wide %<>%
+    mutate(
+      across(c(env_attitude_1_T1:SelfEff_3_T2, spillover_1:spillover_2, state_helped_goals:state_helped_change,state_use_future), ~ factor(str_to_lower(.x), levels = levels_statements_1))
+    )
+  
+  survey_data_all_wide %<>%
+    mutate(
+      across(intention_1, ~ factor(.x, levels = levels_statements_2))
+    )
+  
+  survey_data_all_wide %<>%
+    mutate(
+      across(intention_2, ~ factor(.x, levels = levels_statements_3)),
+      across(UX_1_supportive, ~ factor(.x, levels = levels_UX_1)),
+      across(UX_2_easy, ~ factor(.x, levels = levels_UX_2)),
+      across(UX_3_efficient, ~ factor(.x, levels = levels_UX_3)),
+      across(UX_4_clear, ~ factor(.x, levels = levels_UX_4)),
+      across(UX_5_exciting, ~ factor(.x, levels = levels_UX_5)),
+      across(UX_6_interesting, ~ factor(.x, levels = levels_UX_6)),
+      across(UX_7_inventive, ~ factor(.x, levels = levels_UX_7)),
+      across(UX_8_leading, ~ factor(.x, levels = levels_UX_8)),
+      across(state_accept_alt, ~ factor(.x, levels = levels_statements_4)),
+    )
+}

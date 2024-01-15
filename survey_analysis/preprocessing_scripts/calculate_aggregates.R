@@ -291,6 +291,16 @@ cron_alphas <-
 
 survey_data_all %<>% filter(user_ID != 15)
 
+
+# duration in minutes -----------------------------------------------------
+
+survey_data_all %<>%
+  mutate(
+    duration_min = as.difftime(duration_sec/60, units = "mins"),
+    .after = StartDate,
+    .keep = "unused"
+  )
+
 # export ------------------------------------------------------------------
 
 write_csv(survey_data_all,here("survey_analysis","datasets","processed","survey_data_all.csv"))

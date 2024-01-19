@@ -170,8 +170,14 @@ user_data %<>%
       distinct()
   )
 
-#those we fill with 0
+#those that have no receipts and receive 'NA' we asign 0
 user_data$n_receipts_user %<>% replace_na(0)
+
+#Now let's define a primary holdhold person for the study. This is the most active person (i.e., has the most receipts scanned)
+user_data %<>% 
+  group_by(household_ID) %>%
+  mutate(primary = ifelse(n_receipts_user == max(n_receipts_user),'primary','secondary'))
+#note, inspecting the data shows that no household has both members as primary
 
 user_data %>% write_csv(here("common data","processed","participant_data.csv"))
 

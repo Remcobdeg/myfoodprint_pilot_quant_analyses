@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = F)
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(tidyverse)
 library(magrittr)
 library(here)
@@ -21,7 +21,7 @@ library(lme4)
 receipt_data <- read_csv(here("receipt analysis","data","processed","receipt_level_data.csv"))
 ```
 
-## Descriptives
+## Descriptives
 
 ### Receipt level descriptives
 
@@ -141,9 +141,9 @@ A visual analysis does not suggest any clear change in foodprint.
 
 ## Determine whether there is statistical evidence of footprint changing over time
 
-### Using mixed-model statistics (parametric)
+### Using mixed-model statistics (parametric)
 
-#### With receipt ID as time factor
+#### With receipt ID as time factor
 
 ##### The model
 

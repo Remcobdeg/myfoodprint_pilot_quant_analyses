@@ -50,3 +50,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Don't track processed data any longer -- note that this doesn't work as the folder has already been added to git. We can undo this by the command $ git rm -r --cached . But don't do this now.
+**/processed/

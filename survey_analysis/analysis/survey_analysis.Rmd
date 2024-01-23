@@ -13,27 +13,121 @@ knitr::opts_chunk$set(echo = F)
 ```{r}
 library(tidyverse)
 library(magrittr)
-library(psych)
-library(here)
-library(lattice)
+library(psych) #describe.by function
+library(here) 
+library(lattice) #desityplot function
+library(hrbrthemes) #ggplot themes, e.g. theme_ipsum
+# library(reporttools) #latex code for table with date descriptives
+library(summarytools) #package that can help with descriptive statistics if it includes dates
+library(gridExtra) #plots side by side
+library(cowplot) #plots side by side and allows changing relative size
+library(gt) # (grammar tables) nice tables directly for publication or Latex
+library(gtExtras) #extension to gt to allow e.g. graphs in plots
+library(gtsummary) #extension to gt to automate summary tables
 ```
 
 
-```{r}
-# surveyT2 <- read_csv(file.path("..","datasets","processed","surveyT2.csv"))
-source(here("preprocessing_scripts","preprocess_survey_T1.R"))
-source(here("preprocessing_scripts","preprocess_survey_T2.R"))
-source(here("preprocessing_scripts","calculate_aggregates.R"))
+```{r message=FALSE}
+#load survey data and convert to factors
+survey_data_all <- read_csv(here("survey_analysis","datasets","processed","survey_data_all.csv"))
+
+survey_data_all_wide <- read_csv(here("survey_analysis","datasets","processed","survey_data_all_wide.csv"))
+
+
+# convert to factors
+source(here("survey_analysis","preprocessing_scripts","convert_to_factor.R"))
 ```
+
 
 # Survey analyses
 
 ## Descriptives
 
 ### Survey meta data
+
+
+
+TO DO: study meta data: start date, end date (range, median), study duration (range, median, IQR?) -- mention 2 participants having a break.
+Survey meta: duration of survey, number of questions. 
+Duration of interviews.
+
+demographics
+...
+
+TO DO: compare barriers before and after
+
+Demographics
+
+#### Variation in study start and end dates of participants (as measured by the time of taking the survey)
+
+```{r}
+#make a descriptive table of survey dates
+survey_data_all %>% 
+    rename(survey_date = StartDate) %>% #a better description 
+    mutate(across(where(~ is.POSIXct(.)), as.numeric)) %>% #to calculate distributions, we need numeric data
+    mutate(across(survey_id, ~ case_match(., "T1 (start)" ~ "start", "T2 (end)" ~ "end"))) %>% #these will become the variable names
+    mutate(across(survey_id, ~ factor(., levels = c("start","end"),ordered = T))) %>%
+    group_by(survey_id) %>% 
+    summarise( #creating the descriptive stats
+      across(
+        .cols = contains("date"), 
+        .fns = list(
+          median = ~ as_datetime(median(.x, na.rm = TRUE)), 
+          IQR = ~ IQR(.x / as.numeric(ddays(1)), na.rm = TRUE) %>% round(digits = 2), #%>% paste('days')
+          min = ~ as_datetime(min(.x, na.rm = TRUE)),
+          max = ~ as_datetime(max(.x, na.rm = TRUE)),
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+      )
+    ) %>%
+    #add a group name so that we can have a row group that we can target for the footnote
+    add_column(data_group = "Study period") %>%
+    group_by(data_group) %>%
+    # #turning the survey_id to the row label
+    # column_to_rownames(var = "survey_id") %>%
+    #creating the gt table
+    gt(rowname_col = "survey_id") %>%
+    fmt_date( #format the date display style
+      columns = where(~ is.POSIXct(.)),
+      rows = everything(),
+      date_style = "day_m_year",
+      pattern = "{x}",
+      locale = NULL
+    ) %>%
+    fmt_duration( #format the period style 
+      columns = contains("date_IQR"),
+      input_units = "days",
+      output_units = "days",
+      duration_style = "wide"
+    ) %>%
+    #creating the distribution graph
+    gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+    #add footnote that the start and end date are determined by the date of doing the start/end survey
+    tab_footnote(
+      footnote = md("Study start and end dates are defined here by the date the participant completed the start and end surveys."),
+      locations = cells_stub(rows = everything()))
+```
+
+
+
+```{r}
+# TO DO: study meta data: start date, end date (range, median), study duration (range, median, IQR?) -- mention 2 participants having a break.
+# Survey meta: duration of survey, number of questions. 
+survey_data_all_wide %>% 
+  select(contains(c("survey_date","study_duration","survey_duration"))) %>% 
+  dfSummary()
+
+
+#participants started the receipt scanning period over a range of two weeks, between 2023-04-24 and 2023-05-09 and finished this period between 2023-05-17 and 2023-06-09 (~3 week spread). Receipt scanning periods ranged from x to x weeks, with two participants extending to ~ 4 weeks participation, due to a 1-week vacation abroad. Receipts were scanned between ... and .... [?most receipts were scanned early during the study period, with xx% of receipts scanned in the first week after onboarding... with the median receipt scanning date on ...]. 
+
+```
+
+
+In a density plot:
 ```{r}
 #graph of distribution of start dates
-surveyT1T2_aggr %>% 
+survey_data_all %>% 
   ggplot(aes(x=StartDate,color=survey_id)) +
   geom_density(position = "identity") +
   geom_point(y=0,shape=4) +
@@ -41,14 +135,13 @@ surveyT1T2_aggr %>%
   labs(x = "Survey", y="Date")
 ```
 
-```{r}
-densityplot(as.numeric(surveyT1$StartDate %>% as.numeric()))
-```
-
+In a box plot:
 
 ```{r}
+
+##TRY PUTTING TWO GRAPHS IN ONE USING ... MULTIPLOT?
 #graph of distribution of start dates
-surveyT1T2_aggr %>% 
+p1 <- survey_data_all %>% 
   arrange((survey_id)) %>% 
   ggplot(aes(x=survey_id,y=StartDate)) +
   geom_boxplot() + 
@@ -56,16 +149,201 @@ surveyT1T2_aggr %>%
   # facet_wrap(.~survey_id, scales = "free") + 
   theme_ipsum() +
   labs(x = "Survey", y="Date")
+
+# #because of the extreme outlier, we want to note this one only as a text and reduce the scale of the graph
+# #graph of distribution of start dates
+# 
+# 
+# #move outlier to separate column
+# graphData <- 
+#   survey_data_all %>%
+#   mutate(
+#     duration_outlier = 
+#       ifelse(
+#         abs(duration_min) > quantile(abs(duration_min),.99), 
+#         duration_min,
+#         NA
+#       ),
+#   .after = duration_min)
+# 
+# #now replace the outlier by NA 
+# graphData %<>%
+#   mutate(
+#     duration_min = 
+#       ifelse(
+#         abs(duration_min) < quantile(abs(duration_min),.99), 
+#         duration_min,
+#         NA
+#       )
+#     )
+
+p2 <- survey_data_all %>% 
+  arrange((survey_id)) %>% 
+  ggplot(aes(x=survey_id,y=duration_min)) +
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9, shape=3) +
+  # facet_wrap(.~survey_id, scales = "free") + 
+  theme_ipsum() +
+  labs(x = "Survey", y="Survey duration (mins)") + 
+  scale_y_log10()
+
+#study duration
+p3 <- survey_data_all_wide %>%
+  ggplot(aes(y=study_duration, x = "")) +
+  geom_boxplot() + 
+  geom_jitter(color="black", size=0.4, alpha=0.9, shape=3) +
+  theme_ipsum() +
+  labs(x = "", y="Study duration (days)")# + 
+  # scale_y_log10()
+
+#MAY NEED EXTRA GRID INSTEAD
+w = 19/50
+plot_grid(p1, p2, p3, align = "h", ncol = 3, rel_widths = c(w, w, (1-2*w)))
+plot_grid(plotlist = list(p1, p2, p3), align = "h", ncol = 3, rel_widths = c(w, w, (1-2*w)))
 ```
 
-```{r}
-surveyT1T2_aggr %>%
-  group_by(survey_id) %>%
-  describe()
-```
+### Participant demographics
+
 
 ```{r}
-densityplot(surveyT1T2_aggr$age)
+survey_data_all_wide %>%
+  select(age:apps_used) %>%
+  dfSummary()
+```
+
+```{r fig.height=8}
+#graphical presentation of participant demographics
+
+#some factors are really long and need to be relabeled so that all can fit
+survey_data_all_wide$degree %<>% fct_relabel(~ gsub(" \\(high school diploma or equivalent including GED\\)","", .x))
+
+#adults and children need to be turned into factors for better representation
+survey_data_all_wide$children %<>% factor(., levels = c('0','1','2'))
+
+graphs <- 
+  survey_data_all_wide %>% 
+  select(age:diet) %>%
+  #for each column (variable) in the data frame we want the data (.x) and the name (.y) 
+  map2(.x = ., .y = names(.), ~ ggplot(data = survey_data_all_wide, aes(x=.x)) + 
+        geom_bar() + 
+        labs(x = "",y = "", title = str_replace_all(.y,"_"," ")) +
+         coord_flip()
+      )
+
+plot_grid(plotlist = graphs, align = "v", ncol = 2)
+
+#probably better as a faceted ggplot. However, need to assure that factors are maintained
+
+```
+
+
+```{r}
+#attempt to do the above as a faceted graph
+
+#define the columns we want to plot (we need this data on several instances, e.g. also to organise the output)
+plot_cols <- survey_data_all_wide %>% select(share_store:`share_out-of-home`) %>% names(.)
+
+survey_data_all_wide %>% 
+    #this is household level information, so we take this data only from the primary household member (as identified by the number of contributed receipts).
+  filter(primary == "primary") %>%
+  select(user_ID,matches(plot_cols)) %>%
+  #ggplot needs the data in long format. Because it has consistent factor levels throughout this works
+  pivot_longer(cols = share_store:`share_out-of-home`, names_to = "variable", values_to = "frequency") %>%
+  #turn 'variable' into a factor, so it is organised as it appears in the original data
+  mutate(variable = factor(variable, levels = plot_cols)) %>% 
+  # #we want to replace the underscores by white spaces
+  # mutate((frequency = fct_relabel(frequency, ~ gsub("_"," ", .x)))) %>%
+  
+  ggplot(aes(x=frequency)) + 
+    geom_bar() + 
+    facet_wrap(
+      .~variable, 
+      #replace the underscores in the facet labels
+      labeller = as_labeller(setNames(as.character(str_replace_all(plot_cols,"_"," ")),as.character(plot_cols)))
+    ) + 
+    coord_flip() + 
+    stat_count(
+      geom = "label", 
+      # colour = "white", 
+      size = 3.5,
+      aes(label = after_stat(count)),
+      position=position_stack(vjust=1)
+    ) +
+    theme_ipsum() +
+    labs(x = "", y="") + 
+    ggtitle("Where you get your food from?")
+
+
+
+```
+##### Other sources for food acquisition
+
+```{r}
+#now lets also plot how many households got food from other sources then the default 6
+#we use a donut chart. This requires percentages in the data and defined values of top and bottom of each slice
+graph_data <- survey_data_all_wide %>%
+  filter(primary == "primary") %>%
+  count(share_other) %>%
+  #in percentages
+  mutate(ratio = n/sum(n)) %>%
+  #top of each rectangle of
+  mutate(ymax = cumsum(ratio)) %>%
+  #bottom of each rectangle 
+  mutate(ymin = c(0,head(ymax, n=-1))) %>%
+  #add data for a slice label
+  mutate(label = paste0(share_other,": ",n,"\n (",round(ratio * 100),"%)")) %>%
+  #position data to center the label
+  mutate(label_position = (ymin+ymax)/2)
+
+#lets plot
+graph_data %>%
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=2, xmin=0, fill=share_other)) +
+    geom_rect() + 
+    coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+    xlim(c(-2, 2)) + # By setting a lower xmin for the displayed axis, we create the gap in the center
+    geom_label( x=1, aes(y=label_position, label=label), size=5) + 
+    theme_void() +
+    theme(legend.position = "none") + 
+    ggtitle("Acquiring food through other sources")
+
+#and create a list of these sources
+
+survey_data_all_wide %>%
+  filter(primary == "primary") %>% 
+  filter(!is.na(other_def)) %>%
+  select(other_def) %>%
+  mutate(across(other_def, ~ str_to_sentence(.))) %>% 
+  rename(`Descriptions of other food sources` = other_def) %>%
+  #create the table
+  gt() %>%
+  #change the border style inbetween rows
+  tab_style(
+    style = cell_borders(
+      sides = c("top", "bottom"),
+      color = "white",
+      weight = px(1.5),
+      style = "solid"
+    ),
+    locations = cells_body()
+  ) %>%
+  # #smaller text inside cell
+  # tab_style(
+  #   style = cell_text(size = "small"),
+  #   locations = cells_body()
+  # ) %>% 
+  #reduce padding around cells
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining 'other food sources'
+  tab_footnote(footnote = md("If participants selected *yes* on the previous question, they could provide a free-text description of these food sources."),
+                 locations = cells_column_labels(columns = `Descriptions of other food sources`))
+
+```
+
+
+##### Where do people get their groceries from
+
+```{r}
+densityplot(survey_data_all$age)
 ```
 
 

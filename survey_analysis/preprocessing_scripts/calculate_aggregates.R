@@ -344,17 +344,7 @@ survey_data_all %<>%
 # ADD PARTICIPANT AND HOUSEHOLD INFORMATION -------------------------------
 
 ## bring in user data
-user_data <- read_csv(here('common data','id_mapping_annonymous.csv')) 
-## convert the start date to a date object, recorded in UTC (not BST)
-user_data %<>% mutate(start_date = dmy_hm(start_date, tz="UTC"))
-## change the display of the start date to BST
-# attr(user_data$start_date, "tzone") <- "Europe/London"
-
-#rename some variables in user_data
-user_data %<>%
-  rename(
-    user_ID = ID
-  )
+user_data <- read_csv(here("common data","processed","participant_data.csv")) 
 
 # merge the two dataframes
 survey_data_all %<>% 
@@ -364,12 +354,11 @@ survey_data_all %<>%
   )
 
 #verify time zone consistency
-attr(survey_data_all$start_date, "tzone")
+attr(survey_data_all$user_start, "tzone")
 attr(survey_data_all$survey_date_T1, "tzone")
 attr(survey_data_all$survey_date_T2, "tzone")
 
 #all 3 in UTC
-
 
 # export survey data in wide format ---------------------------------------
 

@@ -14,6 +14,7 @@ knitr::opts_chunk$set(echo = F)
 library(tidyverse)
 library(magrittr)
 library(psych) #describe.by function
+library(pastecs) #stat.desc function (normality check)
 library(here) 
 library(lattice) #desityplot function
 library(hrbrthemes) #ggplot themes, e.g. theme_ipsum
@@ -102,14 +103,44 @@ survey_data_all %>%
       duration_style = "wide"
     ) %>%
     #creating the distribution graph
-    gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+    gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = T) %>%
     #add footnote that the start and end date are determined by the date of doing the start/end survey
     tab_footnote(
       footnote = md("Study start and end dates are defined here by the date the participant completed the start and end surveys."),
       locations = cells_stub(rows = everything()))
 ```
 
-
+```{r}
+#make a descriptive table of survey dates
+survey_data_all_wide %>% 
+    select(study_duration) %>%
+    summarise( #creating the descriptive stats
+      across(
+        .cols = everything(), 
+        .fns = list(
+          median = ~ (median(.x, na.rm = TRUE)), 
+          IQR = ~ IQR((.x), na.rm = TRUE), 
+          min = ~ (min(.x, na.rm = TRUE)),
+          max = ~ (max(.x, na.rm = TRUE)),
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+      )
+    ) %>%
+    #reduce to 1 decimal
+    mutate(
+      across(
+        median:max, ~ round(.x, digits = 1)
+      )
+    ) %>%
+  
+    #add a group name so that we can have a row group that we can target for the footnote
+    add_column(rowname = "Duration (days)") %>%
+    #creating the gt table
+    gt(rowname_col = "rowname") %>%
+    #creating the distribution graph
+    gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = T) 
+```
 
 ```{r}
 # TO DO: study meta data: start date, end date (range, median), study duration (range, median, IQR?) -- mention 2 participants having a break.
@@ -346,23 +377,443 @@ survey_data_all_wide %>%
 densityplot(survey_data_all$age)
 ```
 
+```{r}
+#check for reporting paired t-test and independent t-test. t-stat, p, effect size; 95%-CI range; interpretation of scale
+#bar-chart for ordinal scales. use integer levels of factors and describe the scores in the caption
+```
 
+## Distribution of ordinal data
 
-calculate stats
-show differences visually
+### Disagree-Agree scale answers
 
 ```{r}
-#merge survey results
-#note differences in columns with T1 and T2 for knowledge, self-efficacy and attitudes
+## APPROACH: grid like heatmap with percentage count and color -- like correlation plot. Shortname and question on the horizontal. 7 levels on the vertical. ~ table grid with colors
 
-# survey_data <- left_join(surveyT1,surveyT2, by = "user_ID", suffix = c("_T1","_T2"))
-survey_data <- bind_rows(surveyT1,surveyT2,.id = "timepoint")
+# Attitudes 1 (T1): I think of myself as a person who cares for the environmental.
+# Attitudes 1 (T2): I think of myself as a person who cares for the environmental.
+# Attitudes 2 (T1): To engage in environmentally sustainable behaviours is an important part of who I am.
+# Attitudes 2 (T2): To engage in environmentally sustainable behaviours is an important part of who I am.
+# Attitudes 3 (T1): I am NOT the kind of person who makes efforts to conserve the environment.
+# Attitudes 3 (T2): I am NOT the kind of person who makes efforts to conserve the environment.
+# Attitudes 4 (T1): In my daily life I try to find ways to minimize my impact on the environment.
+# Attitudes 4 (T2): In my daily life I try to find ways to minimize my impact on the environment.
+# Self-Efficacy 1 (T1): I feel that I can make a difference by paying attention to the footprint of my groceries
+# Self-Efficacy 1 (T2): I feel that I can make a difference by paying attention to the footprint of my groceries
+# Self-Efficacy 2 (T1): I feel that I know how to go about pursuing a low foodprint.
+# Self-Efficacy 2 (T2): I feel that I know how to go about pursuing a low foodprint.
+# Self-Efficacy 3 (T1): I feel capable to pursue a low foodprint.
+# Self-Efficacy 3 (T2): I feel capable to pursue a low foodprint.
+# Spill-over 1: Over the last weeks I have become more attentive to environmental issues unrelated to the MyFoodPrint app.
+# Spill-over 2: Over the last week I feel I have become more inclined to engage in environmental sustainablility matters unrelated to the MyFoodPrint app.
+# Impact 1: The app helped me in my environmental goals.
+# Impact 2: The app made me feel more in control of my foodprint.
+# Impact 3: The app helped me change my purchase behaviour.
 
+ratings_table_labels <- 
+  c(
+    "Attitudes 1 (T1): I think of myself as a person who cares for the environmental.",
+    "Attitudes 1 (T2): I think of myself as a person who cares for the environmental.",
+    "Attitudes 2 (T1): To engage in environmentally sustainable behaviours is an important part of who I am.",
+    "Attitudes 2 (T2): To engage in environmentally sustainable behaviours is an important part of who I am.",
+    "Attitudes 3 (T1): I am NOT the kind of person who makes efforts to conserve the environment.",
+    "Attitudes 3 (T2: I am NOT the kind of person who makes efforts to conserve the environment.",
+    "Attitudes 4 (T1): In my daily life I try to find ways to minimize my impact on the environment.",
+    "Attitudes 4 (T2): In my daily life I try to find ways to minimize my impact on the environment.",
+    "Self-Efficacy 1 (T1): I feel that I can make a difference by paying attention to the footprint of my groceries.",
+    "Self-Efficacy 1 (T2): I feel that I can make a difference by paying attention to the footprint of my groceries.",
+    "Self-Efficacy 2 (T1): I feel that I know how to go about pursuing a low foodprint.",
+    "Self-Efficacy 2 (T2): I feel that I know how to go about pursuing a low foodprint.",
+    "Self-Efficacy 3 (T1): I feel capable to pursue a low foodprint.",
+    "Self-Efficacy 3 (T2): I feel capable to pursue a low foodprint.",
+    "Spill-over 1: Over the last weeks I have become more attentive to environmental issues unrelated to the MyFoodPrint app.",
+    "Spill-over 2: Over the last week I feel I have become more inclined to engage in environmental sustainablility matters unrelated to the MyFoodPrint app.",
+    "Impact 1: The app helped me in my environmental goals.",
+    "Impact 2: The app made me feel more in control of my foodprint.",
+    "Impact 3: The app helped me change my purchase behaviour."
+  )
+
+ratings_table_data <- 
+  survey_data_all_wide %>%
+  select(env_attitude_1_T1:SelfEff_3_T2, spillover_1:spillover_2,state_helped_goals:state_helped_change)
+
+#map labels with variable names
+ratings_table_labels <-
+  tibble(shortname = names(ratings_table_data), label = ratings_table_labels)
+
+
+
+#create gt table with questions(labels) as row names and percentages (colored background) for each of the 7 levels
 #
-t.test(surveyT1$knowledge_score,surveyT2$knowledge_score)
-t.test(surveyT1$SelfEff,surveyT2$SelfEff)
-t.test(surveyT1$env_attitude ,surveyT2$env_attitude) #not different
+
+
+
+#aggregate ratings
+ratings_table <- 
+  ratings_table_data %>% 
+  pivot_longer(cols = everything(), names_to = "shortname", values_to = "response") %>% 
+  group_by_all() %>% 
+  count()
+  # mutate(across(everything(), ~ ./n()))
+
+#calculate number of answers per question
+ratings_table %<>%
+  group_by(shortname) %>%
+  mutate(answers_n = sum(n))
+
+#calculate percentage  
+ratings_table %<>%
+  mutate(perc = n/answers_n, .keep = "unused")
+
+#for displaying, create a column per answer category
+ratings_table %<>%
+  pivot_wider(names_from = response, values_from = perc)
+
+#ordering the answer columns according to the factor levels
+ratings_table %<>% 
+  relocate(
+    contains(
+      ratings_table_data %>% pull(1) %>% levels() #this line pulls the organised factors from the first variable (note that all the variables share the same factor levels)
+    ), 
+    .after = last_col()
+  )
+
+#replace NA by 0
+ratings_table %<>% 
+  mutate(
+    across(
+      where(is.numeric),
+      ~ replace_na(.,0)
+    )
+  )
+
+#include the label
+ratings_table %<>% 
+  left_join(ratings_table_labels,.)
+
+#remove the shortname
+ratings_table %<>% select(!shortname)
+
+#separate elements of the label so we can use these for grouping
+ratings_table %<>% 
+  separate_wider_delim(cols = label , delim = ': ', names = c("shortname","question"))
+
+ratings_table %<>% 
+  separate_wider_delim(cols = shortname , delim = ' ', names = c("concept","question_nr","timepoint"), too_few = "align_start")
+
+#remove the brackets around the time point label
+ratings_table %<>% 
+  mutate(timepoint = str_replace_all(timepoint,"[:punct:]",""))
+
+#some questions only appeared in the T2 questionnaire. We didn't include a time point for those, but will do so now. 
+ratings_table %<>% 
+  mutate(timepoint = replace_na(timepoint,"T2 only"))
+
+#merge the question number and question back again
+ratings_table %<>% 
+  mutate(question = paste(question_nr, question, sep = ": "), .keep = "unused")
+
+
+#style that table 
+ratings_table %>% 
+  group_by(concept,timepoint) %>%
+  gt(rowname_col = "question") %>%
+  tab_spanner(
+    label = "ratings",
+    columns = `strongly disagree`:`strongly agree`
+  ) %>%
+  fmt_percent(
+    columns = where(is.numeric),
+    decimals = 0
+  ) %>%
+  data_color(
+    method = "numeric",
+    palette = c("#ffffff", "#f2fbd2", "#c9ecb4", "#93d3ab", "#35b0ab")
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  )
+
+#for poster: use SE1, SE2, etc. and column labels 1:7 with footnote: 1 = strongly disagree, 7 = strongly agree
 ```
+
+```{r}
+# Intention 1: How likely are you to reduce your footprint over the next months?
+# Intention 2: How inclined are you to attempt to reduce your footprint over the next months?
+
+    "Intention 1: How likely are you to reduce your footprint over the next months?",
+    "Intention 2: How inclined are you to attempt to reduce your footprint over the next months?",
+```
+
+## Visualizing composite results
+
+```{r}
+#adjustment dataset: rename the survey_id to before and after and make it into an ordinal factor
+survey_data_all %<>% 
+  mutate(
+    survey_id = case_match(survey_id, "T1 (start)" ~ "before", "T2 (end)" ~ "after")
+  ) %>%
+  mutate(
+    survey_id = factor(survey_id, levels = c("before","after"))
+  )
+```
+
+
+Boxplots of differences in knowledge, self-efficacy and intention
+
+```{r knowledge boxplot, fig.height=6, fig.width=3}}
+survey_data_all %>% 
+  
+  #divide the score by 100 because it is a percentage. We will use a percentage axis
+  mutate(knowledge_score = knowledge_score/100) %>%
+  
+  #create a boxplot
+  ggplot(aes(x=survey_id, y=knowledge_score)) + 
+  geom_boxplot(
+    #manual color (green)
+    fill = "#A1EEBD", #"#35b0ab",
+    
+    # Notch?
+    notch=F,
+    notchwidth = 0.8,
+  ) + 
+  
+  #y axis in percentage
+  scale_y_continuous(labels = scales::percent) +
+  
+  #no axis labels. Title only
+  labs(x = "", y = "", title = "Foodprint knowledge") + 
+  
+  #style
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#export the plot
+ggsave(here("output","plots","knowledge_boxplot.png"), width = 3, height = 6)
+```
+
+```{r selfefficacy boxplot, fig.height=6, fig.width=3}}
+survey_data_all %>% 
+  
+  #create a boxplot
+  ggplot(aes(x=survey_id, y=SelfEff)) + 
+  geom_boxplot(
+    #manual color (yellow)
+    fill = "#F6F7C4",  #"#f2fbd2",
+    
+    # Notch?
+    notch=F,
+    notchwidth = 0.8,
+  ) + 
+  
+  #no axis labels. Title only
+  labs(x = "", y = "", title = "Self-efficacy") + 
+  
+  #y-axis scale 1 to 7
+  scale_y_continuous(limits = c(1,7), breaks = c(1,3,5,7)) +
+  
+  #style
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#export the plot
+ggsave(here("output","plots","selfefficacy.png"), width = 3, height = 6)
+```
+
+```{r intention boxplot, fig.height=6, fig.width=2}}
+survey_data_all %>% 
+  
+  select(survey_id, intention) %>%
+  filter(!is.na(intention)) %>%
+  
+  #create a boxplot
+  ggplot(aes(x=survey_id, y=intention)) + 
+  geom_boxplot(
+    #manual color (blue)
+    fill = "#7BD3EA",
+    
+    # Notch?
+    notch=F,
+    notchwidth = 0.8,
+  ) + 
+  
+  #no axis labels. Title only
+  labs(x = "", y = "", title = "Intention") + 
+  
+  #y-axis scale 1 to 7
+  scale_y_continuous(limits = c(1,7), breaks = c(1,3,5,7)) +
+  
+  #style
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#export the plot
+ggsave(here("output","plots","intention.png"), width = 2, height = 6)
+```
+
+```{r spillover boxplot, fig.height=6, fig.width=2}}
+survey_data_all %>% 
+  
+  select(survey_id, spillover) %>%
+  filter(!is.na(spillover)) %>%
+  
+  #create a boxplot
+  ggplot(aes(x=survey_id, y=spillover)) + 
+  geom_boxplot(
+    #manual color (red-orange)
+    fill = "#F6D6D6",
+    
+    # Notch?
+    notch=F,
+    notchwidth = 0.8,
+  ) + 
+  
+  #no axis labels. Title only
+  labs(x = "", y = "", title = "Spillover") + 
+  
+  #y-axis scale 1 to 7
+  scale_y_continuous(limits = c(1,7), breaks = c(1,3,5,7)) +
+  
+  #style
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#export the plot
+ggsave(here("output","plots","spillover.png"), width = 2, height = 6)
+```
+
+Boxplots of all the 7-point Lickert scale questions
+
+```{r boxplot all composites}
+#boxplot of all 7-point Lickert scale questions
+
+survey_data_all %>% 
+  
+  #select the data
+  select(survey_id, env_attitude, SelfEff, intention, spillover) %>% 
+  
+  #long format for ggplot
+  pivot_longer(cols = !survey_id, names_to = "concept", values_to = "response") %>% 
+  
+  #make some concept names more legible
+  mutate(
+    concept = case_match(
+      concept, 
+      "env_attitude" ~ "Environmental attitude",
+      "SelfEff" ~ "Self-efficacy",
+      "intention" ~ "Intention",
+      "spillover" ~ "Spillover"
+    )
+  ) %>%
+  
+  #remove NA responses (because some variables were not recorded at T1 (before))
+  filter(!is.na(response)) %>%
+  
+  #create the boxplot
+  ggplot(aes(x=concept, y=response, fill = survey_id)) + 
+  geom_boxplot() + 
+  
+  # #separate facet for each concept
+  # facet_wrap(~concept, scales = "free_x") +
+  
+  theme_minimal() + 
+  
+  labs(x = "", y = "", fill = "Time point")
+
+```
+
+
+```{r stats knowledge}
+#aim: 
+# - visually show knowledge at t1 and knowledge at t2
+# - visually show difference from zero of knowledge change. CI of value
+# - note: check distribution of knowledge values --> box plots as create by the table above --> use block below as a basis. First try the default gtable summary tool
+# for variables: 
+# maybe env_attitude_1_T1 to SelfEff_3_T2 --> these are ordinal!
+# knowledge_1_score_T1 to knowledge_score_T2 --> all continuous
+# intention:helpful --> all continuous
+
+survey_data_all_wide %>%
+  select(contains("knowledge")) %>%
+  gt_plt_summary()
+
+survey_data_all_wide %>%
+  mutate(knowledge_gain = knowledge_score_T2 - knowledge_score_T1, .keep = "none") %>% 
+  stat.desc(norm = T) 
+#normally distributed
+
+survey_data_all_wide %>%
+  mutate(knowledge_gain = knowledge_score_T2 - knowledge_score_T1, .keep = "none") %>% 
+  boxplot()
+
+with(survey_data_all_wide, 
+     t.test(knowledge_score_T2, knowledge_score_T1, paired = T, alternative = "greater")
+     )
+
+#https://www.datanovia.com/en/lessons/t-test-effect-size-using-cohens-d-measure/
+
+#cohen-D
+library(rstatix)
+
+survey_data_all %>%  
+  cohens_d(knowledge_score ~ survey_id, paired = TRUE)
+#effect size: -0.83 (large effect size)
+```
+
+```{r stats self efficacy}
+## self-efficacy
+
+survey_data_all_wide %>%
+  select(contains("SelfEff")) %>%
+  gt_plt_summary()
+
+survey_data_all_wide %>%
+  mutate(efficacy_gain = SelfEff_T2 - SelfEff_T1, .keep = "none") %>% 
+  stat.desc(norm = T) 
+#normally distributed
+
+survey_data_all_wide %>%
+  mutate(efficacy_gain = SelfEff_T2 - SelfEff_T1, .keep = "none") %>% 
+  boxplot()
+
+with(survey_data_all_wide, 
+     t.test(SelfEff_T2,SelfEff_T1, paired = T, alternative = "greater")
+     )
+
+#cohen-D
+survey_data_all %>%  
+  cohens_d(SelfEff ~ survey_id, paired = TRUE)
+#effect size: -0.80 (large effect size)
+```
+
+```{r stats intention}
+
+survey_data_all_wide %>%
+  select(intention,spillover) %>% 
+  stat.desc(norm = T) 
+#normally distributed
+
+with(survey_data_all_wide, 
+     t.test(intention-4 , alternative = "greater")
+     )
+
+#cohen-D
+survey_data_all %>%  
+  cohens_d(intention ~ 1, mu = 4)
+#effect size: 1.57 (large effect size)
+
+with(survey_data_all_wide, 
+     t.test(spillover-4 , alternative = "greater")
+     )
+
+#cohen-D
+survey_data_all %>%  
+  cohens_d(spillover ~ 1, mu = 4)
+#effect size: 0.68 (moderate effect size)
+
+
+```
+
 
 
 

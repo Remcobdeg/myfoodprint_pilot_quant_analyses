@@ -1,0 +1,409 @@
+---
+title: "MFP GA analysis"
+author: "Remco Benthem de Grave"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+```{r lib}
+library(tidyverse)
+library(magrittr)
+library(jsonlite)
+library(tcltk)
+library(pastecs)
+library(here)
+```
+
+```{r}
+#read the GA JSON files 
+  GAFiles <- list.files(here("GA","data","raw"))
+
+  #read in all the GA data files and concatenate them in one data frame
+  GAData <- map_df(GAFiles, 
+                    \(file) 
+                    stream_in(file(
+                      here("GA","data","raw",file)
+                    ))
+                  )
+
+# 
+# # dirName <- "/Users/b8058356/Library/CloudStorage/OneDrive-NewcastleUniversity/PhD Personaled Food Recommendation/Study 5/GA/data"
+# # if(!exists("dirName")){
+# #   dirName <- tk_choose.dir(default = "", caption = "Select directory of GA files")
+# # }
+# dirName <- here("GA","data")
+# 
+# if("GAData.json" %in% list.files(here("GA","data"))){
+#   GAData <- read_json(path = here("GA","data","GAData.json")) %>% as.tibble()
+# } else {
+#   GAFiles <- list.files(here("GA","data","raw"))
+# 
+#   #read in all the GA data files and concatenate them in one data frame
+#   GAData <- map_df(GAFiles, 
+#                     \(file) 
+#                     stream_in(file(
+#                       file.path(dirName,file)
+#                     ))
+#                   )
+#   write_json(GAData, here("GA","data","GAData.json"))
+# }
+```
+
+```{r}
+#tidy data
+#convert time values to POSIXct
+GAData %<>% mutate(event_timestamp = 
+                         (as.numeric(event_timestamp) / 1000000) %>% # convert microseconds to seconds
+                         as.POSIXct(., origin = "1970-01-01", tz = "Europe/London")) #tz UTC-1 because of erroneous conversion in app
+                   # %>% 
+                         # format(., "%Y-%m-%d %H:%M:%S")) # format the datetime object
+
+GAData %<>% mutate(user_first_touch_timestamp = 
+                         (as.numeric(user_first_touch_timestamp) / 1000000) %>% # convert microseconds to seconds
+                         as.POSIXct(., origin = "1970-01-01", tz = "Europe/London")) #tz UTC-1 because of erroneous conversion in app
+# %>% 
+                         # format(., "%Y-%m-%d %H:%M:%S")) # format the datetime object
+
+#keep only columns of interest
+GAData %<>% select(event_timestamp:event_bundle_sequence_id,user_properties:user_first_touch_timestamp, device, user_id)
+```
+
+```{r}
+#narrow it down to user in events, and those not by the admin
+GAData %<>% filter(!is.na(user_id) ) %>% filter(user_id != "6429db483071e41bedb00892" & user_id != "63ff3abb7a74defef8cf5afe" & user_id != "64418ee0379c7d06f5592402" & user_id != "645a19399a8aa035fb824e88")
+#these are either the admin or unused accounts
+
+GADataPart <- GAData
+
+```
+
+Events are uniquely identified by the event_bundle_sequence_id.
+
+Some event_bundle_sequence_id's cover more than one event. This causes issues. We will define a number for each individual event within an event_bundle_sequence_id.
+
+```{r}
+GADataPart %<>% group_by(event_bundle_sequence_id) %>% mutate(event_nr = row_number()) %>% ungroup() %>% relocate(event_nr, .after = event_bundle_sequence_id)
+```
+
+
+
+```{r unnest event params}
+## some columns are nested dataframes, for clarity we unnest them and remove unwanted columns
+
+###first the event parameters
+GADataPart %<>% unnest(event_params)
+# nestedDFs <- GAData$event_params %>% map_df(\(df) df) #difficult alternative to unnesting
+
+#the data has been unnested in the form of key-value pairs. Let's unnest that as well
+GADataPart %<>% unnest(value)
+#the two created columns are string_value and int_value. However, no key seems to be connected with both a integer and a string. Let's check if this is the case, so we can do some data reduction
+eval(is.na(GADataPart$string_value) & is.na(GADataPart$int_value)) %>% sum()
+eval(!is.na(GADataPart$string_value) & !is.na(GADataPart$int_value)) %>% sum()
+#yes, there are no rows that have both a string and an integer value. We can combine these two columns into one
+GADataPart %<>% 
+  mutate(
+    value = ifelse(is.na(int_value),string_value,int_value),
+    .keep = "unused",
+    .before = string_value
+  ) 
+
+#the data has been unnested in the form of key-value pairs (long data) that has created extra rows. 
+
+#let's see which keys (attributes) are of interest to analyse further. By filtering on these keys, we can reduce the data to a more manageable size
+unique_events <- GADataPart %>% distinct(key, value)
+#looking at the created data, we see that there are still too many unique events to get an overview. Let's look at the unique events after removing some of the keys that have too many events to allow us to get an overview of the rest
+#engagement_time_msec is interesting, but it has many values so it's hard to explore other variables; let's look at it again without engagement_time_msec
+unique_events %<>% filter(key != "engagement_time_msec")
+unique_events %<>% filter(key != "ga_session_id")
+#now we can deduct interesting keys:  page_location, event_category, engagement_time_msec, event_label, ga_session_id, ga_session_number?
+
+GADataPart %<>% filter(key %in% c("page_location", "event_category", "engagement_time_msec", "event_label", "ga_session_id", "ga_session_number"))
+
+#now let's give these keys their own column
+GADataPart %<>% pivot_wider(names_from = key, values_from = value)
+GADataPart %<>% relocate(device, .after = last_col())
+
+
+```
+
+```{r}
+#this investigation showed that we can ignore user_properties for now. Let's remove it
+GADataPart %<>% select(!(c(user_properties)))
+# #unpack and explore user_properties
+# unique_properties <- 
+#   GADataPart %>% 
+#   select(user_properties) %>% 
+#   unnest(user_properties) %>%
+#   distinct() %>%
+#   arrange(key)
+# #this is the user id and event time stamp; let's keep the user_id
+# 
+# GADataPart %<>% unnest(user_properties)
+# GADataPart %<>% unnest(value)
+# GADataPart %<>% select(!(c(key, set_timestamp_micros, user_first_touch_timestamp)))
+# GADataPart %<>% rename(user_id = string_value)
+
+```
+
+```{r}
+
+#filter out sessions before the briefing (those were me) --> need to check how time is recorded and converted with regard to time zone (mistakes) --> check their sessions in stats to determine
+
+# 644562dce03a186463df54fd before 24-04 11AM UTC+1  
+GADataPart %<>% filter(!(user_id == "644562dce03a186463df54fd" & event_timestamp < as.POSIXlt("2023-04-24 11:00", tz="Europe/London")))
+
+#  64478f1f9a8aa035fb823f6c before 25-04 10:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "64478f1f9a8aa035fb823f6c" & event_timestamp < as.POSIXlt("2023-04-25 10:30", tz="Europe/London")))
+
+# 6447a6049a8aa035fb823fb8 before 25-04 11:30 UTC+1  
+GADataPart %<>% filter(!(user_id == "6447a6049a8aa035fb823fb8" & event_timestamp < as.POSIXlt("2023-04-25 11:40", tz="Europe/London")))
+
+# 6447d364ead1f8e46567534e before 25-04 15:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "6447d364ead1f8e46567534e" & event_timestamp < as.POSIXlt("2023-04-25 15:00", tz="Europe/London")))
+
+# 6448f48d9a8aa035fb82410b before 26-04 10:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "6448f48d9a8aa035fb82410b" & event_timestamp < as.POSIXlt("2023-04-26 10:30", tz="Europe/London")))
+
+# 64481e059a8aa035fb82407b before 26-04 12:00 UTC+1  
+GADataPart %<>% filter(!(user_id == "64481e059a8aa035fb82407b" & event_timestamp < as.POSIXlt("2023-04-26 13:30", tz="Europe/London"))) #looks like colin had GA blocked
+
+# 644963f29a8aa035fb8241af before 26-04 18:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "644963f29a8aa035fb8241af" & event_timestamp < as.POSIXlt("2023-04-26 18:30", tz="Europe/London"))) 
+
+# 644a92769a8aa035fb824217 before 27-04 16:00 UTC+1  
+GADataPart %<>% filter(!(user_id == "644a92769a8aa035fb824217" & event_timestamp < as.POSIXlt("2023-04-27 16:00", tz="Europe/London"))) #no data for David?
+
+# 644f9adf9a8aa035fb8242df before 01-05 15:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "644f9adf9a8aa035fb8242df" & event_timestamp < as.POSIXlt("2023-05-01 15:00", tz="Europe/London"))) 
+
+# 644fad889a8aa035fb824333 before 01-05 17:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "644fad889a8aa035fb824333" & event_timestamp < as.POSIXlt("2023-05-01 17:30", tz="Europe/London"))) 
+
+# 644ffe5e9a8aa035fb824387 before 01-05 17:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "644ffe5e9a8aa035fb824387" & event_timestamp < as.POSIXlt("2023-05-01 17:30", tz="Europe/London"))) #no data for Will...
+
+# 6450ca419a8aa035fb8243fd before 02-05 12:00 UTC+1  
+GADataPart %<>% filter(!(user_id == "6450ca419a8aa035fb8243fd" & event_timestamp < as.POSIXlt("2023-05-02 12:00", tz="Europe/London"))) 
+
+# 64534db1ac23d986b3199a4f before 09-05 12:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "64534db1ac23d986b3199a4f" & event_timestamp < as.POSIXlt("2023-05-09 12:30", tz="Europe/London"))) 
+
+# 645a195b9a8aa035fb824e93 before 09-05 12:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "645a195b9a8aa035fb824e93" & event_timestamp < as.POSIXlt("2023-05-09 12:30", tz="Europe/London"))) 
+
+# 64510e5d9a8aa035fb82453c before 02-05 14:09 UTC+1 
+GADataPart %<>% filter(!(user_id == "64510e5d9a8aa035fb82453c" & event_timestamp < as.POSIXlt("2023-05-02 14:09", tz="Europe/London"))) 
+
+
+# 6450ef1a9a8aa035fb824491 before 02-05 15:09 UTC+1 
+GADataPart %<>% filter(!(user_id == "6450ef1a9a8aa035fb824491" & event_timestamp < as.POSIXlt("2023-05-02 14:09", tz="Europe/London"))) 
+
+# 645220979a8aa035fb824614 before 03-05 10:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "645220979a8aa035fb824614" & event_timestamp < as.POSIXlt("2023-05-03 10:30", tz="Europe/London"))) 
+
+# 645228229a8aa035fb82463b before 03-05 10:20 UTC+1 
+GADataPart %<>% filter(!(user_id == "645228229a8aa035fb82463b" & event_timestamp < as.POSIXlt("2023-05-03 10:20", tz="Europe/London"))) 
+
+# 645261c49a8aa035fb8246e5 before 03-05 17:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "645261c49a8aa035fb8246e5" & event_timestamp < as.POSIXlt("2023-05-03 17:30", tz="Europe/London"))) 
+
+# 645293ac9a8aa035fb824763 before 03-05 17:30 UTC+1 
+GADataPart %<>% filter(!(user_id == "645293ac9a8aa035fb824763" & event_timestamp < as.POSIXlt("2023-05-03 17:30", tz="Europe/London"))) 
+
+# 64534f15ac23d986b3199a5a before 04-05 09:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "64534f15ac23d986b3199a5a" & event_timestamp < as.POSIXlt("2023-05-04 09:00", tz="Europe/London"))) 
+
+# 64528d129a8aa035fb824756 before 04-05 09:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "64528d129a8aa035fb824756" & event_timestamp < as.POSIXlt("2023-05-04 09:00", tz="Europe/London"))) 
+
+# 6454ba719a8aa035fb824931 before 05-05 09:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "6454ba719a8aa035fb824931" & event_timestamp < as.POSIXlt("2023-05-05 09:00", tz="Europe/London"))) 
+
+GADataPart %<>% filter(!(user_id == "6453ac32ac23d986b3199a67" & event_timestamp < as.POSIXlt("2023-05-05 09:00", tz="Europe/London"))) 
+
+# 645a16059a8aa035fb824dc2 before 09-05 12:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "645a16059a8aa035fb824dc2" & event_timestamp < as.POSIXlt("2023-05-09 12:00", tz="Europe/London"))) 
+
+# 645a43709a8aa035fb824f0a before 09-05 22:00 UTC+1 
+GADataPart %<>% filter(!(user_id == "645a43709a8aa035fb824f0a" & event_timestamp < as.POSIXlt("2023-05-09 22:00", tz="Europe/London"))) 
+
+
+known <- c("644562dce03a186463df54fd", "64478f1f9a8aa035fb823f6c", "6447a6049a8aa035fb823fb8", "6447d364ead1f8e46567534e", "6448f48d9a8aa035fb82410b", "64481e059a8aa035fb82407b",
+  "644963f29a8aa035fb8241af", "644a92769a8aa035fb824217", "644f9adf9a8aa035fb8242df",
+  "644fad889a8aa035fb824333", "644ffe5e9a8aa035fb824387", "6450ca419a8aa035fb8243fd",
+  "64534db1ac23d986b3199a4f", "645a195b9a8aa035fb824e93", "64510e5d9a8aa035fb82453c",
+  "645220979a8aa035fb824614", "645228229a8aa035fb82463b", "645261c49a8aa035fb8246e5",
+  "645293ac9a8aa035fb824763", "6454ba719a8aa035fb824931", "6450ef1a9a8aa035fb824491",
+  "6450ef1a9a8aa035fb824491", "64528d129a8aa035fb824756", "64534f15ac23d986b3199a5a",
+  "6453ac32ac23d986b3199a67", "645a16059a8aa035fb824dc2", "645a43709a8aa035fb824f0a"
+  )
+
+allusers <- GADataPart$user_id %>% unique() 
+allusers[!(allusers %in% known)]
+
+#also need to remove all events from local host + investigate when it's my device accessing
+```
+
+
+```{r}
+#filter out remaining admin activities
+GADataPart %<>% dplyr::filter(!str_detect(page_location, "localhost")) #remove events clearly by admin activity
+GADataPart %<>% filter(!(GADataPart$device$operating_system_version == "Macintosh Intel 10.15")) 
+```
+
+
+```{r}
+#let's clean up a little more
+
+#shorten the url in the page location
+GADataPart %<>% mutate(page_location = str_replace(page_location, 'https://myfoodprint.openlab.dev/', '/'))
+
+#reduce our interest even further
+GADataPart %<>% select(event_timestamp, ga_session_id, user_id, event_name, page_location,event_bundle_sequence_id, event_nr,  event_category, event_label, engagement_time_msec)
+```
+
+```{r categorise events}
+event_categories <- read_csv(here("GA","data","classification_event_names.csv"))
+GADataPart %<>% left_join(event_categories, by = c("event_name" = "event_name")) %>% 
+  mutate(event_category = ifelse(is.na(event_category), "Other", event_category))
+GADataPart %<>% relocate(c(event_category, `Event type`, `Special event`), .after = event_name)
+```
+
+
+values that I could be interested in:
+- number of receipts added (not in this data)
+- time spend with app open
+- number of visits
+- time spend on help pages
+- time spend on pages -- relative
+- going through time and views as an indicator of engagement?
+- number of clicks on products as indicator of engagement? 
+- clicks and scroll as engagement?
+
+note: need to remove visits before briefing (those were me!)
+
+
+first let's do some analysis on usage time
+-> for each session id, identify the min and max time
+-> make a new dataframe to caputure session id, start and end time
+-> add user_id
+
+```{r}
+# GADataPart %>% count(event_name)
+# #some of these are passive-events. Let's excluded those
+# passiveEvents <- c("page_view","Success","No Receipts Retrieved","No Date Identified on Receipt","Leaving Website","Fetch Receipts","Error Fetching Alternatives","Error")
+# #note: page_view would be needed to determine the time spend on a specific page
+# GADataPart %<>% filter(!(event_name %in% passiveEvents))
+```
+
+```{r}
+#test to see if I can easily determine the time between two events in a session
+
+#to do this well we need a separate row/case for each event_bundle_sequence_id. 
+#in principle we can ignore all events that are not the first event in a session, as we are interested in the time between events, but we do want to keep information about the different event names. 
+
+GADataPart <- 
+  GADataPart %>% 
+  group_by(ga_session_id, event_bundle_sequence_id) %>%
+  #collapse non-grouping variables
+  mutate(across(c(where(is.character) & !page_location), ~paste(unique(.), collapse = ","))) %>% 
+  distinct(ga_session_id, event_bundle_sequence_id, .keep_all = T) %>% 
+  arrange(ga_session_id, event_timestamp)
+
+#calculate the time delay until the next event
+GADataPart %<>% 
+  group_by(ga_session_id) %>% 
+  mutate(
+    action_delay_next = difftime(lead(event_timestamp), event_timestamp, units = "secs"),
+    action_delay = difftime(event_timestamp, lag(event_timestamp), units = "secs"),
+    .after = "event_timestamp"
+  )
+
+#visualize the variation in time between events
+hist(GADataPart$action_delay %>% as.numeric())
+
+#some events have a very long time between them. This is because the session is not closed, while there is no action. --> delete single events if they are not joined by other events within a 1-min timespan
+GADataPart %<>% 
+  add_column(subsession = ifelse(GADataPart$action_delay_next > 60, 1, 0), .after = "ga_session_id") %>%
+  mutate(subsession = cumsum(subsession)) 
+
+
+
+
+```
+
+```{r session summary}
+GADataPart %<>% 
+  mutate(page_location = str_to_lower(page_location))
+
+#calculate session summary
+session_summary <-
+  GADataPart %>%
+  group_by(ga_session_id, subsession) %>%
+  summarise(
+    session_start = min(event_timestamp),
+    session_end = max(event_timestamp),
+    session_duration = difftime(session_end, session_start, units = "secs"),
+    session_clicks = sum(str_detect(`Event type`,"Click")),
+    session_clicks_product = sum(str_detect(event_name,"Click Product")),
+    session_visit_help = sum(str_detect(event_name,"Open Help")),
+    session_knowledge_detail = sum(str_detect(event_name,"Clicked Detail")),
+    session_images = sum(str_detect(event_name,"Take Photo")),
+    #sum action_delay_next where page_location is not NA
+    session_time_basket = sum(ifelse(page_location == "/" | (page_location) == "/basket", action_delay_next, 0)),
+    session_time_alternatives = sum(ifelse((page_location) == "/alternatives", action_delay_next, 0)),
+    session_time_camera = sum(ifelse(str_detect(page_location, "/camera"), action_delay_next, 0)),
+    session_time_stats = sum(ifelse(page_location == "/stats", action_delay_next, 0)),
+    
+  )
+
+#many sessions are of lenght 0. This is because the session is not closed. We can remove these sessions
+session_summary %<>% filter(session_duration > 0)
+
+
+```
+
+```{r session stats}
+
+library(gtsummary)
+
+
+session_summary %>%
+  #need to merge the two grouping vars because tbl_summary does not allow for multiple grouping vars
+  mutate(ga_session_id = paste0(ga_session_id,"-",subsession), .keep = "unused") %>%
+  tbl_summary(
+    by = ga_session_id
+  )
+
+#update the above. We want session_duration , 
+
+
+```
+
+```{r}
+
+
+#calculate summary statics of the session duration
+library(psych)
+describe(session_summary$session_duration %>% as.numeric(), omit = T, skew = F, quant=c(.25,.5,.75), IQR=T) %>%
+  select(n, Q0.5, IQR, min, max, Q0.25, Q0.75, mean, sd, se) %>% rename(median = Q0.5)
+
+
+# session_summary %>% 
+#   ggplot(aes(x = session_duration)) +
+#   geom_boxplot() +
+#   geom_jitter(width = .1, height = 0, shape = 1)
+```
+
+
+
+
+
+
+
+
+

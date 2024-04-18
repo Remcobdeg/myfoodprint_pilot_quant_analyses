@@ -1,0 +1,30 @@
+event_name,Event type,Special event
+Success,Passive,
+page_view,Passive,
+Click,Click,
+Close Camera Instruction,Click,
+Take Photo,Click,Take Photo
+Remove Photo,Click,
+Save and Exit,Click,
+Close Success Message,Click,
+Leaving Website,Passive,
+Exit Camera Click,Click,
+Click Product,Click,Click Product
+Error Fetching Alternatives,Passive,
+scroll,Click,
+Open Help Dialog,Click,Open Help
+Close Help Dialog,Click,Close Help
+Select Alternative Product From Dropdown,Click,
+Click Period Toggle,Click,
+Click Previous Date,Click,
+Click Next Date,Click,
+user_engagement,Click,
+Click Graph Toggle,Click,Show Bar chart
+No Date Identified on Receipt,Passive,
+form_start,Passive,
+Fetch Receipts,Passive,
+No Receipts Retrieved,Passive,
+Clicked Topic,Click,
+session_start,Passive,
+Clicked Link,Click,Look up article
+Clicked Detail,Click,Look up FAQ detail

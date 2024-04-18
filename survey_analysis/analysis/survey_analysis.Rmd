@@ -235,12 +235,136 @@ plot_grid(plotlist = list(p1, p2, p3), align = "h", ncol = 3, rel_widths = c(w, 
 
 ### Participant demographics
 
+```{r}
+#define primary household member based on most receipts contributed
+
+#for each household_ID in survey_data_all_wide, define (summurise) MAX n_receipts_user and their ID, who contributed the most receipts
+survey_data_all_wide <- 
+  survey_data_all_wide %>%
+  group_by(household_ID) %>%
+  mutate(
+    status = case_when(
+      n_receipts_user == max(n_receipts_user) ~ "Primary participant",
+      TRUE ~ "Secondary participant"
+    ),
+    .after = "user_ID"
+  ) %>%
+  ungroup()
+
+#prep for GT
+demographics <- 
+  survey_data_all_wide %>%
+  select(status,age:diet) %>% #,apps_used) %>%
+  # mutate(apps_used = as.factor(apps_used)) %>%
+  mutate(across(where(is.factor), ~ fct_drop(., NULL)))
+
+names(demographics) <- 
+  str_to_sentence(names(demographics))
+
+#summary table
+demographics %<>% 
+  tbl_summary(
+    by = Status,
+    label = 
+      list(
+        Adults ~ "Adults in household",
+        Children ~ "Children in household",
+        # Apps_used ~ "Used apps to calculate carbon footprint before",
+        Does_groceries ~ "Who does the groceries"
+      )
+  ) %>%
+  #add a total/overall count
+  add_overall() %>%
+  # adding spanning header for participant roles
+  modify_spanning_header(c("stat_1", "stat_2") ~ "Participant role") %>% 
+  modify_footnote(update = everything() ~ NA) %>%
+  modify_footnote(
+    c("stat_1","stat_2") ~ "The primary, or dominant, participant is the household participant who contributed the most receipts. The secondary participant is the other household participant."
+    )
+
+demographics
+
+#save demographics table
+demographics %>% 
+  as_gt() %>% 
+  gtsave(here("output","tables","demographics.docx"))
+
+#add manual footnote to 'used apps' row in html
+#one participant used: WWF's my footprint app, Klima and myplannetapp
+#one participant used: Co2.myclimate.org; ourworldindata; for travel the trip providers often have an estimate
+
+
+```
+
+```{r food acquisition}
+#table of food acquisition sources
+
+shares <- survey_data_all_wide %>% 
+  select(share_store:`share_out-of-home`) %>%
+  pivot_longer(cols = share_store:`share_out-of-home`, names_to = "Source", values_to = "frequency") %>%
+  group_by(Source) %>%
+  count(frequency) %>%
+  mutate(ratio = n/sum(n)) %>%
+  select(-n) %>%
+  #rename source names by removing "share_" and "_"
+  mutate(
+    Source = str_remove_all(Source,"share_"),
+    Source = str_replace_all(Source,"_"," ")
+  ) %>%
+  
+  # pivot_wider(names_from = frequency, values_from = c(ratio)) %>%
+  pivot_wider(names_from = Source, values_from = c(ratio)) %>%
+  #replace NA by 0
+  mutate(
+    across(
+      where(is.numeric),
+      ~ replace_na(.,0)
+    )
+  ) %>% 
+  ungroup()
+  
+#reorder columns
+shares %<>%
+  relocate(store,online,`meal box`,`veggie box`,`farm store`,`out-of-home`)
+  
+#create GT table
+shares %<>%
+  gt(rowname_col = "frequency") %>% #rowname_col = "Source") %>%
+  # tab_spanner(
+  #   label = "Proportion of food acquired from different sources",
+  #   columns = `none/very little`:`almost all`
+  # ) %>%
+  fmt_percent(
+    columns = where(is.numeric),
+    decimals = 0
+  ) %>%
+  data_color(
+    method = "numeric",
+    palette = c("#ffffff", "#f2fbd2", "#c9ecb4", "#93d3ab", "#35b0ab")
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) 
+
+#show table
+shares
+
+#save table
+shares %>% 
+  gtsave(here("output","tables","food_acquisition.docx"))
+
+```
 
 ```{r}
-survey_data_all_wide %>%
-  select(age:apps_used) %>%
-  dfSummary()
+  
+
+
+
 ```
+
+
 
 ```{r fig.height=8}
 #graphical presentation of participant demographics
@@ -724,14 +848,6 @@ survey_data_all %>%
 
 
 ```{r stats knowledge}
-#aim: 
-# - visually show knowledge at t1 and knowledge at t2
-# - visually show difference from zero of knowledge change. CI of value
-# - note: check distribution of knowledge values --> box plots as create by the table above --> use block below as a basis. First try the default gtable summary tool
-# for variables: 
-# maybe env_attitude_1_T1 to SelfEff_3_T2 --> these are ordinal!
-# knowledge_1_score_T1 to knowledge_score_T2 --> all continuous
-# intention:helpful --> all continuous
 
 survey_data_all_wide %>%
   select(contains("knowledge")) %>%
@@ -758,6 +874,8 @@ library(rstatix)
 survey_data_all %>%  
   cohens_d(knowledge_score ~ survey_id, paired = TRUE)
 #effect size: -0.83 (large effect size)
+
+# t(21) = 4.1, p < 0.001, d = 0.83 (large effect)
 ```
 
 ```{r stats self efficacy}
@@ -784,6 +902,11 @@ with(survey_data_all_wide,
 survey_data_all %>%  
   cohens_d(SelfEff ~ survey_id, paired = TRUE)
 #effect size: -0.80 (large effect size)
+
+# t(21) = 4.9, p < 0.001, d = 0.80 (large effect)
+```
+
+```{r stats intention}
 ```
 
 ```{r stats intention}
@@ -802,6 +925,10 @@ survey_data_all %>%
   cohens_d(intention ~ 1, mu = 4)
 #effect size: 1.57 (large effect size)
 
+# t(21) = 7.3, p < 0.001, d = 1.57 (large effect)
+
+## spillover
+
 with(survey_data_all_wide, 
      t.test(spillover-4 , alternative = "greater")
      )
@@ -811,8 +938,9 @@ survey_data_all %>%
   cohens_d(spillover ~ 1, mu = 4)
 #effect size: 0.68 (moderate effect size)
 
-
+# t(21) = 3.2, p < 0.01, d = .68 (moderate effect)
 ```
+
 
 
 
@@ -830,28 +958,11 @@ make some graphs - barcharts of ratings; average knowledge etc + variance
 #VERY MUCH - TO VERY MUCH +
 #VARIABLE NAME NEEDS TO BE PRESENTED AS E.G. OBSTRUCTIVE (-) / SUPPORTIVE (+)
 
-surveyT2 %>% 
-  select()
-  ggplot(
-    aes()
-  )
+
 
 ```
 
-how to do this fast. get some fast graphs/statistics -->
-horizonal bars of averages
 
-```{r}
-surveyT2 %>% 
-  select(env_attitude:knowledge_score) %>%
-  mutate(knowledge_score = knowledge_score*7/100) %>%
-  pivot_longer(cols = everything()) %>%
-  ggplot(
-    aes(y = name, x = value)
-  ) +
-  geom_boxplot()
-
-```
 
 
 

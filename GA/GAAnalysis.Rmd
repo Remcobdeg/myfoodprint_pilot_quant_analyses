@@ -343,61 +343,348 @@ GADataPart %<>%
 #calculate session summary
 session_summary <-
   GADataPart %>%
-  group_by(ga_session_id, subsession) %>%
+  group_by(ga_session_id, subsession, user_id) %>%
   summarise(
     session_start = min(event_timestamp),
     session_end = max(event_timestamp),
-    session_duration = difftime(session_end, session_start, units = "secs"),
-    session_clicks = sum(str_detect(`Event type`,"Click")),
-    session_clicks_product = sum(str_detect(event_name,"Click Product")),
-    session_visit_help = sum(str_detect(event_name,"Open Help")),
-    session_knowledge_detail = sum(str_detect(event_name,"Clicked Detail")),
-    session_images = sum(str_detect(event_name,"Take Photo")),
-    #sum action_delay_next where page_location is not NA
+    session_time_total = difftime(session_end, session_start, units = "secs"),
     session_time_basket = sum(ifelse(page_location == "/" | (page_location) == "/basket", action_delay_next, 0)),
     session_time_alternatives = sum(ifelse((page_location) == "/alternatives", action_delay_next, 0)),
-    session_time_camera = sum(ifelse(str_detect(page_location, "/camera"), action_delay_next, 0)),
     session_time_stats = sum(ifelse(page_location == "/stats", action_delay_next, 0)),
-    
+    session_time_camera = sum(ifelse(str_detect(page_location, "/camera"), action_delay_next, 0)),
+    session_clicks_total = sum(str_detect(`Event type`,"Click")),
+    session_clicks_product = sum(str_detect(event_name,"Click Product")),
+    session_click_help = sum(str_detect(event_name,"Open Help")),
+    session_click_help_detail = sum(str_detect(event_name,"Clicked Detail")),
+    session_click_image = sum(str_detect(event_name,"Take Photo")),
+    #sum action_delay_next where page_location is not NA
+
   )
 
 #many sessions are of lenght 0. This is because the session is not closed. We can remove these sessions
-session_summary %<>% filter(session_duration > 0)
+session_summary %<>% filter(session_time_total > 1)
 
+#participant summary
+participant_summary <- 
+  session_summary %>% 
+  group_by(user_id) %>% 
+  summarise(
+    sessions_n = n(),
+    time_total = sum(session_time_total),
+    time_basket = sum(session_time_basket),
+    time_alternatives = sum(session_time_alternatives),
+    time_camera = sum(session_time_camera),
+    time_stats = sum(session_time_stats),
+    clicks_total = sum(session_clicks_total),
+    clicks_product = sum(session_clicks_product),
+    clicks_help = sum(session_click_help),
+    clicks_help_detail = sum(session_click_help_detail),
+    clicks_image = sum(session_click_image),
+  )
+
+#total summary
+total_summary <- 
+  session_summary %>% 
+  ungroup() %>%
+  summarise(
+    sessions_n = n(),
+    time_total = sum(session_time_total),
+    time_basket = sum(session_time_basket),
+    time_alternatives = sum(session_time_alternatives),
+    time_camera = sum(session_time_camera),
+    time_stats = sum(session_time_stats),
+    clicks_total = sum(session_clicks_total),
+    clicks_product = sum(session_clicks_product),
+    clicks_help = sum(session_click_help),
+    clicks_help_detail = sum(session_click_help_detail),
+    clicks_image = sum(session_click_image),
+  )
 
 ```
 
-```{r session stats}
-
-library(gtsummary)
-
-
-session_summary %>%
-  #need to merge the two grouping vars because tbl_summary does not allow for multiple grouping vars
-  mutate(ga_session_id = paste0(ga_session_id,"-",subsession), .keep = "unused") %>%
-  tbl_summary(
-    by = ga_session_id
+```{r create tables participants}
+participant_summary_desc <- 
+participant_summary %>%
+  #convert time variables to minutes and numeric
+  mutate(across(contains("time"), ~ as.numeric(.)/60)) %>%
+  rename_with(~paste0(., "_min"), contains("time")) %>%
+  # mutate(across(where(is.numeric), ~round(.,2))) %>%          
+  pivot_longer(
+    cols = everything() & !user_id,
+    names_to = "variable",
+    values_to = "value",
+    cols_vary = "slowest"
   )
 
-#update the above. We want session_duration , 
+#turn the variable into a factor to maintain the order when summarising (below)
+participant_summary_desc %<>%
+  mutate(variable = factor(variable, levels = unique(participant_summary_desc$variable)))
+
+#calculate participant mean, median, sd, and IQR
+participant_summary_desc %<>%
+  #first calculate the statistics 
+  group_by(variable) %>%
+  select(-user_id) %>%
+  summarise(
+    across(
+      everything(),
+        .fns = list(
+          min = min,
+          p0.25 = ~quantile(., 0.25),
+          median = median, 
+          p0.75 = ~quantile(., 0.75),
+          max = max,
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+    ),
+  ) 
+
+#separate the variable to create a grouping variable to be used for the GT table
+participant_summary_desc %<>%
+  separate_wider_delim(variable, names = c("group","var"), delim = "_", too_many = "merge")
+
+
+library(gtExtras)
+
+participant_summary_desc_GT <-
+participant_summary_desc %>%
+  #restyle the variable names
+  mutate(var = str_replace_all(var, "_", " ") %>% str_replace_all(., "min", "[min:sec]") %>% str_replace_all(., "image", "Take picture") %>%  str_to_sentence()) %>%
+  mutate(group = str_replace_all(group, "time", "Time spent") %>% str_replace_all(., "clicks", "Clicks")) %>%
+  group_by(group) %>%
+  gt(rowname_col = "var") %>%
+  gt::fmt_number(columns = min:max, decimals = 0) %>%
+  # gt::fmt_number(columns = median:max, rows = contains("min"), decimals = 2) %>%
+  fmt_duration(
+    columns = min:max,
+    rows = contains("min"), 
+    input_units = "minutes",
+    output_units = c("minutes", "seconds"),
+    duration_style = "colon-sep"
+  ) %>%
+  #creating the distribution graph
+  gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+  #rename column names
+  gt::cols_label(min = "Q0", p0.25 = "Q1", median = "Q2", p0.75 = "Q3", max = "Q4") %>%
+  #apply styling
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>%
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("Q0 = min"), locations = cells_column_labels(min)) %>%
+  tab_footnote(footnote = md("Q1 = 25th percentile"), locations = cells_column_labels(p0.25)) %>%
+  tab_footnote(footnote = md("Q2 = median"), locations = cells_column_labels(median)) %>%
+  tab_footnote(footnote = md("Q3 = 75th percentile"), locations = cells_column_labels(p0.75)) %>%
+  tab_footnote(footnote = md("Q4 = max"), locations = cells_column_labels(max))
+
+participant_summary_desc_GT
+  
+#save the table
+gtsave(participant_summary_desc_GT, file = here("output","tables","GA_participant_summary.png"))
+gtsave(participant_summary_desc_GT, file = here("output","tables","GA_participant_summary.docx"))
+  
+```
+
+```{r create tables total}
+  
+```
+
+
+```{r create table sessions}
+#first a small adjustment to lable names, such that we get nice grouping later
+names(session_summary) <- names(session_summary) %>% str_replace_all("_click_", "_clicks_") 
+
+session_summary_desc <- 
+  session_summary %>% 
+  ungroup() %>%
+  #drop columns we don't need
+  select(-c(ga_session_id:session_end)) %>%
+  #convert time variables to minutes and numeric
+  mutate(across(contains("time"), ~ as.numeric(.)/60)) %>%
+  rename_with(~paste0(., "_min"), contains("time")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "value",
+    cols_vary = "slowest"
+  )
+
+#turn the variable into a factor to maintain the order when summarising (below)
+session_summary_desc %<>%
+  mutate(variable = factor(variable, levels = unique(session_summary_desc$variable)))
+
+#calculate participant mean, median, sd, and IQR
+session_summary_desc %<>%
+  #first calculate the statistics 
+  group_by(variable) %>%
+  summarise(
+    across(
+      everything(),
+        .fns = list(
+          min = min,
+          p0.25 = ~quantile(., 0.25),
+          median = median, 
+          p0.75 = ~quantile(., 0.75),
+          max = max,
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+    ),
+  ) 
+
+#separate the variable to create a grouping variable to be used for the GT table
+session_summary_desc %<>%
+  mutate(variable = str_remove(variable, "session_")) %>%
+  separate_wider_delim(variable, names = c("group","var"), delim = "_", too_many = "merge")
+
+#make the table
+session_summary_desc_GT <-
+session_summary_desc %>%
+  #restyle the variable names
+  mutate(var = str_replace_all(var, "_", " ") %>% str_replace_all(., "min", "[min:sec]") %>% str_replace_all(., "image", "Take picture") %>%  str_to_sentence()) %>%
+  mutate(group = str_replace_all(group, "time", "Time spent") %>% str_replace_all(., "clicks", "Clicks")) %>%
+  group_by(group) %>%
+  gt(rowname_col = "var") %>%
+  gt::fmt_number(columns = min:max, decimals = 0) %>%
+  # gt::fmt_number(columns = median:max, rows = contains("min"), decimals = 2) %>%
+  fmt_duration(
+    columns = min:max,
+    rows = contains("min"), 
+    input_units = "minutes",
+    output_units = c("minutes", "seconds"),
+    duration_style = "colon-sep"
+  ) %>%
+  #creating the distribution graph
+  gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+  #rename column names
+  gt::cols_label(min = "Q0", p0.25 = "Q1", median = "Q2", p0.75 = "Q3", max = "Q4") %>%
+  #apply styling
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("Q0 = min"), locations = cells_column_labels(min)) %>%
+  tab_footnote(footnote = md("Q1 = 25th percentile"), locations = cells_column_labels(p0.25)) %>%
+  tab_footnote(footnote = md("Q2 = median"), locations = cells_column_labels(median)) %>%
+  tab_footnote(footnote = md("Q3 = 75th percentile"), locations = cells_column_labels(p0.75)) %>%
+  tab_footnote(footnote = md("Q4 = max"), locations = cells_column_labels(max))
+
+session_summary_desc_GT
+
+#save the table
+gtsave(session_summary_desc_GT, file = here("output","tables","GA_session_summary.png"))
+gtsave(session_summary_desc_GT, file = here("output","tables","GA_session_summary.docx"))
+  
+```
+
+
+```{r combined summary table}
+
+#row bind the two tables (p0.25, median, p0.75 only)
+combined_summary <- 
+  bind_rows(
+    list(
+      by_participant = participant_summary_desc %>% select(-distribution), 
+      by_session = session_summary_desc %>% select(-distribution)
+    ),
+    .id = "id"
+  )
+
+#for this situation we actually want duration values in seconds, such that we can round values
+combined_summary <- 
+  combined_summary %>%
+  #time values in seconds
+  mutate(across(min:max, ~if_else(str_detect(group, "time"), as.numeric(.)*60, .))) %>%
+  #rename the variables to indicate that they are in seconds
+  mutate(var = str_replace_all(var, "_min", "")) %>%
+  #round the values
+  mutate(across(min:max, ~ round(.,0))) %>%
+  #convert values to character, so that we can have time and numeric formatting in the same column
+  mutate(across(min:max, 
+                ~ ifelse(group == "time",
+                         #format time in mm:ss
+                         sprintf("%02d:%02d", . %/% 60, . %% 60),
+                         #format numeric values
+                         as.character(.)
+                )
+  ))
+
+#create the descriptive values that we want to display
+combined_summary %<>%
+  group_by(group,var, id) %>%
+  mutate(desc = paste0(median, " [", p0.25, ", ", p0.75, "]"),.keep = "none")
+
+#format the total summary to be added to the combined summary
+overall_summary <- 
+  total_summary %>%
+  # mutate(across(contains("time"), ~ as.numeric(.))) %>%
+  # rename_with(~paste0(., "_min"), contains("time")) %>%
+  mutate(across(everything(), ~ round(as.numeric(.),0))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "value",
+    cols_vary = "slowest"
+  ) %>% 
+  separate_wider_delim(variable, names = c("group","var"), delim = "_", too_many = "merge") %>%
+  mutate(desc = 
+             ifelse(group == "time",
+             #format time in hh:mm
+             sprintf("%02d:%02d:%02d", value %/% 3600, value %% 3600 %/% 60, value %% 60 %/% 1),
+             #format numeric values
+             as.character(value)
+  )) %>% 
+  select(-value)
+
+#bind
+combined_summary <- 
+  bind_rows(
+    combined_summary,
+    overall_summary %>% add_column(id = "overall")
+  )
+
+#pivot
+combined_summary %<>%
+  pivot_wider(names_from = id, values_from = desc) %>%
+  select(group, var, overall, by_participant, by_session)
+
+#display as GT table
+combined_summary_GT <-
+combined_summary %>%
+  #restyle the variable names
+  mutate(var = str_replace_all(var, "_", " ") %>% str_replace_all(., "image", "Take picture") %>%  str_to_sentence()) %>%
+  mutate(group = str_replace_all(group, "time", "Time spent  [hh:mm:ss] or [mm:ss]") %>% str_to_sentence(.)) %>%
+  group_by(group) %>%
+  gt(rowname_col = "var") %>%
+  #rename column names
+  gt::cols_label(overall = "Overall", by_participant = "By participant", by_session = "By session") %>%
+  #apply styling
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("median [Q1, Q3]"), locations = cells_column_labels(contains("by_")))
+
+combined_summary_GT
+
+#save the table
+gtsave(combined_summary_GT, file = here("output","tables","GA_summary.png"))
+gtsave(combined_summary_GT, file = here("output","tables","GA_summary.docx"))
 
 
 ```
 
 ```{r}
-
-
-#calculate summary statics of the session duration
-library(psych)
-describe(session_summary$session_duration %>% as.numeric(), omit = T, skew = F, quant=c(.25,.5,.75), IQR=T) %>%
-  select(n, Q0.5, IQR, min, max, Q0.25, Q0.75, mean, sd, se) %>% rename(median = Q0.5)
-
-
-# session_summary %>% 
-#   ggplot(aes(x = session_duration)) +
-#   geom_boxplot() +
-#   geom_jitter(width = .1, height = 0, shape = 1)
 ```
+
+
 
 
 

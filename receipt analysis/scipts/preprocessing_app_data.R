@@ -135,6 +135,7 @@ rcpt_data_v2 %<>% group_by(household_ID) %>% mutate(hh_receipt_id = row_number()
 
 # export
 rcpt_data_v2 %>% write_csv(here("receipt analysis","data","processed","receipt_level_data.csv"))
+purchase_data %>% write_csv(here("receipt analysis","data","processed","purchase_data.csv"))
 
 
 # update user_data with receipt counts and export------------------------------------

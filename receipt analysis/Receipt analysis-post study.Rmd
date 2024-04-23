@@ -16,14 +16,346 @@ library(here)
 library(lattice) #density plot
 library(car) #qqplot
 library(lme4)
+library(wordcloud2) 
+library(webshot) #for saving wordcloud
+library("htmlwidgets")
 
 #read-in the receipts
 receipt_data <- read_csv(here("receipt analysis","data","processed","receipt_level_data.csv"))
+#read-in the separate purchases
+purchase_data <- read_csv(here("receipt analysis","data","processed","purchase_data.csv"))
 ```
 
 ## Descriptives
 
+### Item level descriptives
+
+```{r}
+purchase_data %<>%
+  mutate(item_group = if_else(str_to_lower(item_product) == "gnocchi", "Cereals & Potatoes", item_group))
+
+purchase_data %<>%
+  select(item_group, item_product, item_units, item_weight_g, item_footprint_g_100g) %>%
+  mutate(item_group = str_to_title(item_group), item_product = str_to_lower(item_product)) %>% 
+  group_by(item_group, item_product) %>%
+  summarise(
+    quantity = sum(item_units*item_weight_g/1000), #convert to kg
+    footprint = sum(item_units*item_weight_g/1000*item_footprint_g_100g/100)
+  )
+
+purchase_data %<>% ungroup()
+
+#create a wordcloud with items by quantity
+wordcloud_items_quantity <- purchase_data %>%
+  rename(word = item_product, freq = quantity) %>%
+  arrange(desc(freq)) %>%
+  mutate(
+    freq = freq/min(freq),
+    freq = round(freq)
+  ) %>%
+  relocate(word, freq) %>%
+  wordcloud2()
+
+wordcloud_items_quantity
+  
+#create a wordcloud with items by foodprint
+wordcloud_items_foodprint <- purchase_data %>%
+  rename(word = item_product, freq = footprint) %>%
+  arrange(desc(freq)) %>%
+  mutate(
+    freq = freq/min(freq),
+    freq = round(freq)
+  ) %>%
+  relocate(word, freq) %>%
+  wordcloud2()
+
+wordcloud_items_foodprint
+
+#descriptives
+#total number of items, total weight, total footprint, number of unique items
+
+cat('\n\nNUMBER OF UNIQUE ITEMS\n\n')
+purchase_data %>% 
+  nrow()
+
+#save wordclouds as png
+# webshot::install_phantomjs()
+saveWidget(wordcloud_items_quantity, file = here("output","plots","wordcloud_items_quantity.html"), selfcontained = TRUE)
+webshot(here("output","plots","wordcloud_items_quantity.html"), file = here("output","plots","wordcloud_items_quantity.png"), delay =5, vwidth = 480, vheight=480)
+
+saveWidget(wordcloud_items_foodprint, file = here("output","plots","wordcloud_items_foodprint.html"), selfcontained = TRUE)
+webshot(here("output","plots","wordcloud_items_foodprint.html"), file = here("output","plots","wordcloud_items_foodprint.png"), delay =5)
+
+
+```
+
+
 ### Receipt level descriptives
+
+```{r receipt descriptives by participant}
+receipt_table_data_participant <-
+receipt_data %>% 
+  mutate(preloaded = ifelse(date_recorded > hh_start, "scanned", "preloaded")) %>% 
+  select(user_ID, preloaded, rcpt_CO2_kg:rcpt_items_n) %>% #household_ID,
+  #first create totals per participant
+  group_by(user_ID, preloaded) %>%
+  summarise(
+    across(
+      rcpt_CO2_kg:rcpt_items_n,
+      .fns = list(
+        total = sum
+      ),
+      .names = "{.col}"
+    ),
+    n_receipts = n()
+  ) %>% 
+  #for the moment, let's ignore rcpt_CO2_kg and rcpt_weight_kg
+  select(-c(rcpt_CO2_kg, rcpt_weight_kg)) %>%
+  #pivot data in preparation for statistics
+  pivot_longer(cols = !c(user_ID, preloaded), names_to = 'factor', values_to = 'unit') %>%
+  #calculate the statistics 
+  group_by(preloaded,factor) %>%
+  select(-user_ID) %>%
+  summarise(
+    across(
+      unit,
+        .fns = list(
+          Q0 = min,
+          Q1 = ~quantile(., 0.25),
+          Q2 = median, 
+          Q3 = ~quantile(., 0.75),
+          Q4 = max,
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+    ),
+  ) 
+
+#make a table of the data distribution per participant
+receipt_table_data_participant_GT <-
+receipt_table_data_participant %>%
+  ungroup() %>%
+  #we don't want to show the number of preloaded receipts now (because we'd need to change the preprocessing to identify individual preloaded receipts)
+  # filter(!(factor == "n_receipts" & preloaded == "preloaded")) %>%
+  filter(!(preloaded == "preloaded")) %>%
+  group_by(preloaded) %>%
+  gt(rowname_col = "factor") %>%
+  # gt::fmt_number(columns = min:max, decimals = 0) %>%
+  #creating the distribution graph
+  gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+  #apply styling
+  text_replace(
+    pattern = c("n_receipts", "rcpt_items_n"),
+    replacement = c("Receipts (N)", "Items (N)"),
+    #replace this pattern in the row labels
+    locations = cells_stub(everything())
+  ) %>%
+    text_replace(
+    pattern = c("rcpt_items_n"),
+    replacement = c("Items (N)"),
+    #replace this pattern in the row labels
+    locations = cells_stub(everything())
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("Q0 = min"), locations = cells_column_labels(Q0)) %>%
+  tab_footnote(footnote = md("Q1 = 25th percentile"), locations = cells_column_labels(Q1)) %>%
+  tab_footnote(footnote = md("Q2 = median"), locations = cells_column_labels(Q2)) %>%
+  tab_footnote(footnote = md("Q3 = 75th percentile"), locations = cells_column_labels(Q3)) %>%
+  tab_footnote(footnote = md("Q4 = max"), locations = cells_column_labels(Q4)) %>%
+  #add title
+  tab_header(
+    title = "Receipt descriptives by participant"
+  )
+
+receipt_table_data_participant_GT
+
+#save the table
+gtsave(receipt_table_data_participant_GT, file = here("output","tables","receipt_table_data_participant_GT.png"))
+gtsave(receipt_table_data_participant_GT, file = here("output","tables","receipt_table_data_participant_GT.docx"))
+```
+
+```{r receipt descriptives by receipt}
+receipt_table_data_receipt <-
+receipt_data %>% 
+  mutate(preloaded = ifelse(date_recorded > hh_start, "scanned", "preloaded")) %>% 
+  select(preloaded, rcpt_CO2_kg:rcpt_items_n) %>% #household_ID,
+  
+  #for the moment, let's ignore rcpt_CO2_kg and rcpt_weight_kg
+  select(-c(rcpt_CO2_kg, rcpt_weight_kg)) %>%
+  # #pivot data in preparation for statistics
+  pivot_longer(cols = !c(preloaded), names_to = 'factor', values_to = 'unit') %>%
+  #calculate the statistics 
+  group_by(preloaded,factor) %>%
+  summarise(
+    across(
+      unit,
+        .fns = list(
+          Q0 = min,
+          Q1 = ~quantile(., 0.25),
+          Q2 = median, 
+          Q3 = ~quantile(., 0.75),
+          Q4 = max,
+          distribution = ~ list(.x) #we will create the distribution graph in a next step
+        ),
+        .names = "{.fn}"
+    ),
+  ) 
+
+#make a table of the data distribution per participant
+receipt_table_data_receipt_GT <-
+receipt_table_data_receipt %>%
+  ungroup() %>%
+  #we don't want to show the number of preloaded receipts now (because we'd need to change the preprocessing to identify individual preloaded receipts)
+  # filter(!(factor == "n_receipts" & preloaded == "preloaded")) %>%
+  filter(!(preloaded == "preloaded")) %>%
+  group_by(preloaded) %>%
+  gt(rowname_col = "factor") %>%
+  # gt::fmt_number(columns = min:max, decimals = 0) %>%
+  #creating the distribution graph
+  gt_plt_dist(contains("distribution"), type = "boxplot", same_limit = F) %>%
+  #apply styling
+    text_replace(
+    pattern = c("rcpt_items_n"),
+    replacement = c("Items (N)"),
+    #replace this pattern in the row labels
+    locations = cells_stub(everything())
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("Q0 = min"), locations = cells_column_labels(Q0)) %>%
+  tab_footnote(footnote = md("Q1 = 25th percentile"), locations = cells_column_labels(Q1)) %>%
+  tab_footnote(footnote = md("Q2 = median"), locations = cells_column_labels(Q2)) %>%
+  tab_footnote(footnote = md("Q3 = 75th percentile"), locations = cells_column_labels(Q3)) %>%
+  tab_footnote(footnote = md("Q4 = max"), locations = cells_column_labels(Q4)) %>%
+  #add title
+  tab_header(
+    title = "Receipt descriptives by receipt"
+  )
+
+receipt_table_data_receipt_GT
+
+#save the table
+gtsave(receipt_table_data_receipt_GT, file = here("output","tables","receipt_table_data_receipt_GT.png"))
+gtsave(receipt_table_data_receipt_GT, file = here("output","tables","receipt_table_data_receipt_GT.docx"))
+```
+
+```{r receipt descriptives combined}
+
+#combine the tables and add a row of totals
+receipt_table_data_combined_GT <-
+  bind_rows(
+    receipt_table_data_participant %>% mutate(id = "participant") %>% select(-c(Q0,Q4,distribution)),
+    receipt_table_data_receipt %>% mutate(id = "receipt") %>% select(-c(Q0,Q4,distribution))
+  ) %>%
+  #round data
+  mutate(across(where(is.numeric), ~round(., digits = 0))) %>%
+  # #we don't show info for preloaded receipts
+  # filter(!(preloaded == "preloaded")) %>%
+  # ungroup() %>%
+  # select(-preloaded) %>%
+  #format the summary stat
+  mutate(stat = paste0(Q2," [",Q1,", ",Q3,"]"), .keep = "unused")
+
+#add totals 
+receipt_data_total <- 
+  receipt_data %>%
+  mutate(preloaded = ifelse(date_recorded > hh_start, "scanned", "preloaded")) %>% 
+  select(user_ID, preloaded, rcpt_CO2_kg:rcpt_items_n) %>% #household_ID,
+  #first create totals per participant
+  group_by(preloaded) %>%
+  summarise(
+    across(
+      rcpt_CO2_kg:rcpt_items_n,
+      .fns = list(
+        total = sum
+      ),
+      .names = "{.col}"
+    ),
+    n_receipts = n()
+  ) %>% 
+  #for the moment, let's ignore rcpt_CO2_kg and rcpt_weight_kg
+  select(-c(rcpt_CO2_kg, rcpt_weight_kg)) %>%
+  #pivot data in preparation for statistics
+  pivot_longer(cols = !c(preloaded), names_to = 'factor', values_to = 'stat') %>%
+  #add table id
+  mutate(id = "overall")
+
+receipt_table_data_combined_GT <-
+  bind_rows(
+    receipt_table_data_combined_GT,
+    receipt_data_total %>% mutate(stat = paste0(stat))
+  ) %>%
+  #we don't show info for preloaded receipts
+  filter(!(preloaded == "preloaded")) %>%
+  ungroup() %>%
+  select(-preloaded)
+
+receipt_table_data_combined_GT %<>% 
+  pivot_wider(names_from = id, values_from = stat) %>%
+  select(factor, overall, participant, receipt) %>%
+  rename("Overall" = overall, "By participant" = participant, "By receipt" = receipt) %>%
+  ungroup() %>%
+  gt(rowname_col = "factor") %>%
+  #apply styling
+  text_replace(
+    pattern = c("n_receipts", "rcpt_items_n"),
+    replacement = c("Receipts (N)", "Items (N)"),
+    #replace this pattern in the row labels
+    locations = cells_stub(everything())
+  ) %>%
+  text_replace(
+    pattern = c("rcpt_items_n"),
+    replacement = c("Items (N)"),
+    #replace this pattern in the row labels
+    locations = cells_stub(everything())
+  ) %>%
+  # text_replace(
+  #   pattern = c("overall", "participant", "receipt"),
+  #   replacement = c("Overall", "By participant", "By receipt"),
+  #   #replace this pattern in the row labels
+  #   locations = cells_column_labels(everything())
+  # ) %>%
+  # text_replace(
+  #   pattern = c("participant", "receipt"),
+  #   replacement = c("By participant", "By receipt"),
+  #   #replace this pattern in the row labels
+  #   locations = cells_column_labels(everything())
+  # ) %>%
+  # text_replace(
+  #   pattern = c("receipt"),
+  #   replacement = c("By receipt"),
+  #   #replace this pattern in the row labels
+  #   locations = cells_column_labels(everything())
+  # ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>% 
+  tab_options(data_row.padding = px(3)) %>%
+  #add a footnote explaining the stats displayed
+  tab_footnote(footnote = md("median [IQR], IQR = Inter Quantile Range"), locations = cells_column_labels(c(`By participant`, `By receipt`)))
+
+receipt_table_data_combined_GT
+
+#save the table
+gtsave(receipt_table_data_combined_GT, file = here("output","tables","receipt_table_data_combined_GT.png"))
+gtsave(receipt_table_data_combined_GT, file = here("output","tables","receipt_table_data_combined_GT.docx"))
+```
+
+```{r}
+
+```
+
+
 
 Those scanned in the app (not the pre-loaded receipts).
 

@@ -25,6 +25,7 @@ library(cowplot) #plots side by side and allows changing relative size
 library(gt) # (grammar tables) nice tables directly for publication or Latex
 library(gtExtras) #extension to gt to allow e.g. graphs in plots
 library(gtsummary) #extension to gt to automate summary tables
+library(ggh4x) #for tuning the scales of facets
 ```
 
 
@@ -495,17 +496,6 @@ survey_data_all_wide %>%
 ```
 
 
-##### Where do people get their groceries from
-
-```{r}
-densityplot(survey_data_all$age)
-```
-
-```{r}
-#check for reporting paired t-test and independent t-test. t-stat, p, effect size; 95%-CI range; interpretation of scale
-#bar-chart for ordinal scales. use integer levels of factors and describe the scores in the caption
-```
-
 ## Distribution of ordinal data
 
 ### Disagree-Agree scale answers
@@ -662,11 +652,10 @@ ratings_table %>%
 ```
 
 ```{r}
-# Intention 1: How likely are you to reduce your footprint over the next months?
-# Intention 2: How inclined are you to attempt to reduce your footprint over the next months?
 
-    "Intention 1: How likely are you to reduce your footprint over the next months?",
-    "Intention 2: How inclined are you to attempt to reduce your footprint over the next months?",
+
+    # "Intention 1: How likely are you to reduce your footprint over the next months?",
+    # "Intention 2: How inclined are you to attempt to reduce your footprint over the next months?",
 ```
 
 ## Visualizing composite results
@@ -675,10 +664,10 @@ ratings_table %>%
 #adjustment dataset: rename the survey_id to before and after and make it into an ordinal factor
 survey_data_all %<>% 
   mutate(
-    survey_id = case_match(survey_id, "T1 (start)" ~ "before", "T2 (end)" ~ "after")
+    survey_id = case_match(survey_id, "T1 (start)" ~ "Pre Study", "T2 (end)" ~ "Post Study")
   ) %>%
   mutate(
-    survey_id = factor(survey_id, levels = c("before","after"))
+    survey_id = factor(survey_id, levels = c("Pre Study","Post Study"))
   )
 ```
 
@@ -830,6 +819,11 @@ survey_data_all %>%
     )
   ) %>%
   
+  #order the concepts
+  mutate(concept = factor(concept, levels = c("Environmental attitude","Self-efficacy","Intention","Spillover")))
+
+
+  
   #remove NA responses (because some variables were not recorded at T1 (before))
   filter(!is.na(response)) %>%
   
@@ -846,6 +840,133 @@ survey_data_all %>%
 
 ```
 
+```{r barcharts}
+
+p <- survey_data_all %>% 
+  
+  #select the data
+  select(survey_id, env_attitude, SelfEff, intention, spillover) %>% 
+  
+  #long format for ggplot
+  pivot_longer(cols = !survey_id, names_to = "concept", values_to = "response") %>% 
+  
+  #make some concept names more legible
+  mutate(
+    concept = case_match(
+      concept, 
+      "env_attitude" ~ "Environmental attitude",
+      "SelfEff" ~ "Self-efficacy",
+      "intention" ~ "Intention",
+      "spillover" ~ "Spillover"
+    )
+  ) %>%
+  
+  #order the concepts
+  mutate(concept = factor(concept, levels = c("Environmental attitude","Self-efficacy","Intention","Spillover"))) %>%
+  
+  #remove NA responses (because some variables were not recorded at T1 (before))
+  filter(!is.na(response)) %>%
+  
+  #calculate the mean and standard deviation for each concept
+  group_by(concept, survey_id) %>%
+  summarise(
+    n=n(),
+    mean = mean(response),
+    sd = sd(response)
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) %>%
+  
+  #create the boxplot
+  ggplot(aes(x=concept, y=mean, fill = survey_id)) + 
+  geom_bar(stat = "identity", position=position_dodge(width=0.9), alpha = 0.8) + 
+  geom_errorbar( aes(x=concept, ymin=mean-ic, ymax=mean+ic), width=0.4, alpha=0.9, size=.7, position=position_dodge(width=0.9), alpha = 0.5) +
+  
+  #manual colors
+  scale_fill_manual(values = c("#1F78B4","#33A02C")) +
+  
+  theme_classic() + 
+  
+  labs(x = "", y = "", fill = "") +
+  
+  theme(legend.position = "top")
+
+p
+
+# ggsave(here("output","plots","barcharts_concepts_survey.png"), width = 4.5, height = 4)
+
+```
+
+```{r barcharts all composites}
+
+p <- survey_data_all %>% 
+  
+  #select the data
+  select(survey_id, env_attitude, knowledge_score, SelfEff, intention, spillover) %>% 
+  
+  #long format for ggplot
+  pivot_longer(cols = !survey_id, names_to = "concept", values_to = "response") %>% 
+  
+  #make some concept names more legible
+  mutate(
+    concept = case_match(
+      concept, 
+      "env_attitude" ~ "Environmental attitude",
+      "SelfEff" ~ "Self-efficacy",
+      "intention" ~ "Intention",
+      "spillover" ~ "Spillover",
+      "knowledge_score" ~ "Knowledge score"
+    )
+  ) %>%
+  
+  #order the concepts
+  mutate(concept = factor(concept, levels = c("Environmental attitude","Knowledge score","Self-efficacy","Intention","Spillover"))) %>%
+  
+  #remove NA responses (because some variables were not recorded at T1 (before))
+  filter(!is.na(response)) %>%
+  
+  #calculate the mean and standard deviation for each concept
+  group_by(concept, survey_id) %>%
+  summarise(
+    n=n(),
+    mean = mean(response),
+    sd = sd(response)
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) %>%
+  
+  #create the boxplot
+  ggplot(aes(x=concept, y=mean, fill = survey_id)) + 
+  geom_bar(stat = "identity", position=position_dodge(width=0.9), alpha = 0.8) + 
+  geom_errorbar( aes(x=concept, ymin=mean-ic, ymax=mean+ic), width=0.4, alpha=0.9, size=.7, position=position_dodge(width=0.9), alpha = 0.5) +
+  facet_wrap(~concept, scales = "free") +
+  
+  #manual colors
+  scale_fill_manual(values = c("#1F78B4","#33A02C")) +
+  
+  theme_classic() + 
+  
+  labs(x = "", y = "", fill = "") +
+  
+  theme(legend.position = "top") + 
+  
+  facetted_pos_scales(
+  y = list(
+    scale_y_continuous(limits = c(1,7)),
+    scale_y_continuous(limits = c(0,100)),
+    scale_y_continuous(limits = c(1,7)),
+    scale_y_continuous(limits = c(1,7)),
+    scale_y_continuous(limits = c(1,7))
+  )
+)
+
+p
+
+
+ggsave(here("output","plots","barcharts_concepts_survey.png"), width = 6)
+
+```
+
 
 ```{r stats knowledge}
 
@@ -854,7 +975,11 @@ survey_data_all_wide %>%
   gt_plt_summary()
 
 survey_data_all_wide %>%
-  mutate(knowledge_gain = knowledge_score_T2 - knowledge_score_T1, .keep = "none") %>% 
+  mutate(
+    knowledge_gain = knowledge_score_T2 - knowledge_score_T1, 
+    # .keep = "none"
+    .keep = "used"
+  ) %>% 
   stat.desc(norm = T) 
 #normally distributed
 
@@ -886,7 +1011,7 @@ survey_data_all_wide %>%
   gt_plt_summary()
 
 survey_data_all_wide %>%
-  mutate(efficacy_gain = SelfEff_T2 - SelfEff_T1, .keep = "none") %>% 
+  mutate(efficacy_gain = SelfEff_T2 - SelfEff_T1, .keep = "used") %>% 
   stat.desc(norm = T) 
 #normally distributed
 
@@ -904,9 +1029,6 @@ survey_data_all %>%
 #effect size: -0.80 (large effect size)
 
 # t(21) = 4.9, p < 0.001, d = 0.80 (large effect)
-```
-
-```{r stats intention}
 ```
 
 ```{r stats intention}
@@ -942,25 +1064,310 @@ survey_data_all %>%
 ```
 
 
+```{r stats combined}
+
+stats_data <-
+  survey_data_all %>% 
+  
+  #select the data
+  select(user_ID, survey_id, env_attitude, knowledge_score, SelfEff, intention, spillover) %>% 
+  
+  #long format for ggplot
+  pivot_longer(
+    cols = c(env_attitude, knowledge_score, SelfEff, intention, spillover), 
+    names_to = "concept", values_to = "response"
+  ) %>%
+  
+  #make some concept names more legible
+  mutate(
+    concept = case_match(
+      concept, 
+      "env_attitude" ~ "Environmental attitude",
+      "SelfEff" ~ "Self-efficacy",
+      "intention" ~ "Intention",
+      "spillover" ~ "Spillover",
+      "knowledge_score" ~ "Knowledge score"
+    )
+  ) %>%
+  
+  #order the concepts
+  mutate(concept = factor(concept, levels = c("Environmental attitude","Knowledge score","Self-efficacy","Intention","Spillover"))) %>%
+  
+  #replace NA's in response column with the value 4 (the population mean that we compare against in this case) 
+  mutate(response = replace_na(response,4)) %>%
+  
+  #create different columns for pre- and post-study
+    pivot_wider(
+      names_from = survey_id, 
+      values_from = response
+    ) %>%
+  
+  #calculate the difference
+  group_by(concept) %>%
+  mutate(
+    difference = `Post Study` - `Pre Study`,
+    # .keep = "unused"
+  )
+
+```
 
 
 
 
-make some graphs - barcharts of ratings; average knowledge etc + variance
 
-```{r}
-#bar charts of UX rating and help scores
-#LOOK INTO: barchart different factor labels, seperated by facets
-#BUT FIRST ONE CHART
-#HORIZONAL STACKED BAR CHART; LABELS NEXT TO BAR? SEE NUSSBAUM
-#INVESTIGATE HOW TO DO THE LEGEND. CAN IT BE COLORED TEXT? 
-#MAYBE AS VERY MUCH A TO VERY MUCH BE. OR LABELS LEFT AND RIGHT OF GRAPH?
-#VERY MUCH - TO VERY MUCH +
-#VARIABLE NAME NEEDS TO BE PRESENTED AS E.G. OBSTRUCTIVE (-) / SUPPORTIVE (+)
+```{r combine t-tests}
+tests <-
+#combine test results in a table
+cbind(
+  
+  #t-test attitudes
+  with(survey_data_all_wide, 
+     t.test(env_attitude_T2, env_attitude_T1, paired = T, alternative = "greater")
+     ) %>% 
+  # broom::tidy()
+  unlist() %>%
+  as.data.frame() %>%
+  rename(`Environmental attitude` = 1),
+  
+  #t-test knowledge
+  with(survey_data_all_wide, 
+     t.test(knowledge_score_T2, knowledge_score_T1, paired = T, alternative = "greater")
+     ) %>% 
+  # broom::tidy()
+  unlist() %>%
+  as.data.frame() %>%
+  rename(`Knowledge score` = 1),
+  
+    #t-test self efficacy
+  with(survey_data_all_wide, 
+     t.test(SelfEff_T2,SelfEff_T1, paired = T, alternative = "greater")
+     ) %>% 
+  # broom::tidy()
+  unlist() %>%
+  as.data.frame() %>%
+  rename(`Self-efficacy` = 1),
+  
+    #t-test intention
+  with(survey_data_all_wide, 
+     t.test(intention-4 , alternative = "greater")
+     ) %>% 
+  # broom::tidy()
+  unlist() %>%
+  as.data.frame() %>%
+  rename(Intention = 1),
+  
+    #t-test spillover
+  with(survey_data_all_wide, 
+     t.test(spillover-4 , alternative = "greater")
+     ) %>% 
+  # broom::tidy()
+  unlist() %>%
+  as.data.frame() %>%
+  rename(Spillover = 1)
+)
 
+#reorganise contents
+tests %<>%
+  rownames_to_column(var = "measure") %>%
+  slice(1:3,10)
+
+tests %<>%
+  pivot_longer(cols = -measure, names_to = "concept", values_to = "value")
+
+tests %<>%
+  pivot_wider(names_from = measure, values_from = value)
+
+tests %<>%
+  mutate(
+    across(
+      c(statistic.t, parameter.df, p.value), 
+      as.numeric
+    ))
+```
+
+```{r combine effect sizes}
+effect_sizes <-
+  bind_rows(
+    survey_data_all %>%  
+      cohens_d(env_attitude ~ survey_id, paired = TRUE),
+    
+    survey_data_all %>%  
+      cohens_d(knowledge_score ~ survey_id, paired = TRUE),
+    
+    survey_data_all %>%  
+      cohens_d(SelfEff ~ survey_id, paired = TRUE),
+    
+    survey_data_all %>%  
+      cohens_d(intention ~ 1, mu = 4),
+    
+    survey_data_all %>%  
+      cohens_d(spillover ~ 1, mu = 4)
+  )
+
+#make some concept names more legible
+effect_sizes %<>%
+  rename(
+    concept = .y.
+  ) %>%
+  mutate(
+    concept = case_match(
+      concept, 
+      "env_attitude" ~ "Environmental attitude",
+      "SelfEff" ~ "Self-efficacy",
+      "intention" ~ "Intention",
+      "spillover" ~ "Spillover",
+      "knowledge_score" ~ "Knowledge score"
+    )
+  )
+
+#keep only columns of interest
+effect_sizes %<>%
+  select(concept, effsize)
+
+effect_sizes %<>% 
+  mutate(
+    effsize = round(effsize,2) %>% abs()
+  ) %>%
+  mutate(
+    magnitude = case_when(
+      effsize < 0.2 ~ "Negligible",
+      effsize < 0.5 ~ "Small",
+      effsize < 0.8 ~ "Medium",
+      effsize < 1.0 ~ "Large",
+      TRUE ~ "Very large"
+    )
+  )
 
 
 ```
+
+```{r normtest}
+
+normTest <-
+  stats_data %>%
+  select(user_ID,concept, difference) %>%
+  pivot_wider(names_from = concept, values_from = difference) %>%
+  select(-user_ID) %>%
+  stat.desc(norm = T) %>%
+  rownames_to_column(var = "statistic") %>%
+  filter(statistic %in% c("normtest.W","normtest.p")) %>%
+  pivot_longer(cols = -statistic, names_to = "concept", values_to = "value") %>% 
+  pivot_wider(names_from = statistic, values_from = value)
+```
+
+```{r combine stats tables}
+#combine the tables
+combined_stats <- 
+  left_join(
+    #join descriptives and test results
+    stats_data %>%
+      #calculate the mean and standard deviation for each concept
+      group_by(concept) %>%
+      summarise(
+        mean = mean(difference),
+        sd = sd(difference)
+    ),
+    tests
+  ) %>%
+  #and join the effect sizes
+  left_join(.,effect_sizes) 
+# %>%
+#   #and join the normality test
+#   left_join(.,normTest)
+
+#format the p-values
+combined_stats %<>%
+  mutate(
+    across(
+      c(mean, sd, `statistic.t`, effsize),
+      ~ round(.,2)
+    )
+  ) %>%
+  mutate(
+    # p.value = formatC(p.value, format = "e", digits = 2)
+    # p.value = round(p.value,3)
+    p.value = 
+      case_when(
+        p.value < 0.001 ~ "<0.001",
+        TRUE ~ (round(p.value,3) %>% as.character())
+      )
+  # ) %>%
+  # mutate(
+  #   # p.value = formatC(p.value, format = "e", digits = 2)
+  #   # p.value = round(p.value,3)
+  #   normtest.p = 
+  #     case_when(
+  #       normtest.p < 0.001 ~ "<0.001",
+  #       TRUE ~ (round(normtest.p,3) %>% as.character())
+  #     )
+  )
+  
+#format the stat
+combined_stats 
+# %<>%
+#   mutate(
+#     across(
+#       c(`statistic.t`, `parameter.df`, p.value),
+#       ~ as.character(.)
+#     )
+#   ) %>%
+#   mutate(
+#     statistic = paste0(t, " (", parameter.df, ")")
+#   )
+
+combined_stats %<>%
+  rename(
+    "Mean" = mean,
+    "SD" = sd,
+    "t" = `statistic.t`,
+    "df" = `parameter.df`,
+    "p" = p.value,
+    "Method" = method,
+    "Cohen-D" = effsize,
+    "Magnitude" = magnitude
+  )
+
+combined_stats %<>% 
+  relocate("Method", .after = "SD")
+
+combined_stats_GT <-
+combined_stats %>%
+  gt(rowname_col = "concept") %>%
+  #add spanner
+  tab_spanner(
+    label = "Estimate",
+    columns = c("Mean","SD")
+  ) %>%
+  tab_spanner(
+    label = "Test statistics",
+    columns = c("Method","t","df","p")
+  ) %>%
+  tab_spanner(
+    label = "Effect size",
+    columns = c("Cohen-D","Magnitude")
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(cells_column_labels(everything()),cells_row_groups(everything()))
+  ) %>%
+  #add footnote for Estimate spanner
+  tab_footnote(
+    footnote = md("When pre- and post-study measures are recorded, these are the mean and standard deviation of the difference between pre- and post-study scores. When only post-study measures are recorded, these are the mean and standard deviation of the post-study scores compared to a population mean of 4 (the mid-way Likert value)."),
+    locations = cells_column_spanners(1)
+  )
+  #add footnote 
+
+#save the table
+gt::gtsave(combined_stats_GT, here("output","tables","combined_stats_GT.png"))
+gt::gtsave(combined_stats_GT, here("output","tables","combined_stats_GT.docx"))
+
+
+```
+
+
+
+
+
 
 
 

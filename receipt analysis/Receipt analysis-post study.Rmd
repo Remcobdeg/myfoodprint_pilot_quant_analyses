@@ -467,7 +467,7 @@ receipt_data %>%
 
 #Weight-adjusted refers to the weight of individual items is factored into the calculation
 #Data was loaded into the app before the participant started. This is accounted in receipt #1
-
+ggsave(here("output","plots","receipt_sequence.png"))
 ```
 A visual analysis does not suggest any clear change in foodprint.
 
@@ -511,7 +511,7 @@ There are indications of outliers and non-normality, so results should be interp
 #to assess whether time was a significant factor, we need to compare it to a simpler model without the time factor
 
 #null model (inteaction only)
-m_null <- lmer(rcpt_CO2_g_100g ~ 1 + (1 | household_ID), data = receipt_data)
+m_null <- lmer(rcpt_CO2_g_100g ~ (1 + hh_receipt_id | household_ID), data = receipt_data)
 
 anova(m_null,m_full)
 ```

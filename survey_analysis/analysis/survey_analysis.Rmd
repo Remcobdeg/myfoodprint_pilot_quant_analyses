@@ -1364,6 +1364,23 @@ gt::gtsave(combined_stats_GT, here("output","tables","combined_stats_GT.docx"))
 
 ```
 
+```{r concept by engagement}
+#plot the differences in knowledge, self-efficacy and intention against the number of receipts per user
+stats_data %>%
+  left_join(.,survey_data_all_wide %>% select(user_ID,n_receipts_user, n_receipts_hh)) %>%
+  # mutate(difference = ifelse(concept == "Knowledge score", difference/100*7, difference)) %>%
+  ggplot(aes(y=difference, x=n_receipts_user, color = concept)) +
+  geom_point() +
+  geom_smooth(method = "lm") + 
+  facet_wrap(~concept, scales = "free") +
+  theme_classic() + 
+  labs(x = "Number of receipts per user", y = "Difference", color = "")
+
+ggsave(here("output","plots","concept_by_receipt_n.png"), width = 6)
+```
+
+```{r concept by engagement}
+```
 
 
 
